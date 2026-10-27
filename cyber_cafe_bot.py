@@ -2,6 +2,7 @@ import io
 import os
 import asyncio
 import logging
+import requests
 from urllib.parse import quote
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, 
@@ -32,53 +33,83 @@ BOT_TOKEN     = os.getenv("BOT_TOKEN")
 UPI_ID        = os.getenv("UPI_ID")
 PAYEE_NAME    = os.getenv("PAYEE_NAME", "मेरा साइबर कैफे")
 ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
+
+# Safety Check for Token (Review Point 3)
+if not BOT_TOKEN:
+    raise ValueError("❌ BOT_TOKEN is missing! Please set it in GitHub Secrets.")
 # ============================================================
 
-# Telegram Message Effect IDs (एनिमेशन के लिए)
-EFFECT_FIRE = "5104841245755180586"      # आतिशबाजी
-EFFECT_CONFETTI = "5046509860389126442"  # कॉन्फेटी (रंगीन कागज)
-EFFECT_HEART = "5159385139981059251"     # दिल
-EFFECT_STARS = "5104841245755180586"     # सितारे (Sparkles)
+# Telegram Message Effect IDs
+EFFECT_CONFETTI = "5046509860389126442"  
+EFFECT_HEART = "5159385139981059251"     
+EFFECT_STARS = "5104841245755180586"     
+EFFECT_THUMBS = "5107584321108051014"    
 
 # ------------------------------------------------------------
-# 🖼️ डायनामिक इमेज जेनरेटर (प्रीमियम ग्राफिक्स)
+# 🖼️ फॉन्ट डाउनलोडर (हिंदी के लिए Fix)
 # ------------------------------------------------------------
-def create_dynamic_banner(title, subtitle="Premium Service"):
-    try:
-        img = Image.new('RGB', (800, 400), color=(10, 15, 30)) # डार्क ब्लू बैकग्राउंड
+FONT_PATH = "NotoSansDevanagari-Bold.ttf"
+FONT_URL = "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSansDevanagari/NotoSansDevanagari-Bold.ttf"
+
+def ensure_hindi_font():
+    if not os.path.exists(FONT_PATH):
+        try:
+            logger.info("Downloading Hindi Font...")
+            r = requests.get(FONT_URL)
+            with open(FONT_PATH, 'wb') as f:
+                f.write(r.content)
+            logger.info("Font downloaded successfully!")
+        except Exception as e:
+            logger.error(f"Font download failed: {e}")
+
+# ------------------------------------------------------------
+# 🎬 GIF बैनर जेनरेटर (CSS जैसा एनिमेशन)
+# ------------------------------------------------------------
+def create_animated_banner(title, subtitle="Premium Digital Services"):
+    frames = []
+    # गहरे रंगों का ग्रेडिएंट (जो धीरे-धीरे बदलेगा)
+    colors = [(10,15,30), (20,25,50), (30,35,70), (20,25,50)] 
+    
+    for i, bg in enumerate(colors):
+        img = Image.new('RGB', (800, 400), color=bg)
         draw = ImageDraw.Draw(img)
         
-        # प्रीमियम लुक के लिए गोल्डन और ब्लू बॉर्डर
-        draw.rectangle([(0, 0), (800, 10)], fill=(255, 215, 0)) # गोल्डन टॉप
-        draw.rectangle([(0, 390), (800, 400)], fill=(255, 215, 0)) # गोल्डन बॉटम
-        draw.rectangle([(0, 0), (10, 400)], fill=(0, 150, 255)) # ब्लू लेफ्ट
-        draw.rectangle([(790, 0), (800, 400)], fill=(0, 150, 255)) # ब्लू राइट
+        # Glowing border (बॉर्डर का चमकना)
+        glow = 150 + int(105 * abs((i % 4) - 2) / 2) 
+        draw.rectangle([(0,0),(800,10)], fill=(255, 215, glow))
+        draw.rectangle([(0,390),(800,400)], fill=(255, 215, glow))
+        draw.rectangle([(0,0),(10,400)], fill=(glow//2, 150, 255))
+        draw.rectangle([(790,0),(800,400)], fill=(glow//2, 150, 255))
         
+        # हिंदी फॉन्ट लोड करना
         try:
-            font_large = ImageFont.truetype("arial.ttf", 60)
-            font_small = ImageFont.truetype("arial.ttf", 30)
+            font_large = ImageFont.truetype(FONT_PATH, 60)
+            font_small = ImageFont.truetype(FONT_PATH, 30)
         except IOError:
+            # Fallback अगर फॉन्ट डाउनलोड न हो पाए
             font_large = ImageFont.load_default()
             font_small = ImageFont.load_default()
-
-        # टाइटल सेंटर में
-        text_bbox = draw.textbbox((0, 0), title, font=font_large)
-        text_w = text_bbox[2] - text_bbox[0]
-        draw.text(((800 - text_w) / 2, 150), title, font=font_large, fill=(255, 255, 255))
         
-        # सबटाइटल सेंटर में
-        sub_bbox = draw.textbbox((0, 0), subtitle, font=font_small)
-        sub_w = sub_bbox[2] - sub_bbox[0]
-        draw.text(((800 - sub_w) / 2, 230), subtitle, font=font_small, fill=(255, 215, 0))
-
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        buf.seek(0)
-        buf.name = "banner.png"
-        return buf
-    except Exception as e:
-        logger.error(f"Banner generation failed: {e}")
-        return None
+        # Text fade-in effect (टेक्स्ट का धीरे-धीरे आना)
+        alpha_factor = min(1.0, (i + 1) / 2)
+        text_color = tuple(int(c * alpha_factor) for c in (255,255,255))
+        
+        bbox = draw.textbbox((0,0), title, font=font_large)
+        x = (800 - (bbox[2]-bbox[0])) / 2
+        draw.text((x, 150), title, font=font_large, fill=text_color)
+        
+        sub_bbox = draw.textbbox((0,0), subtitle, font=font_small)
+        draw.text(((800-(sub_bbox[2]-sub_bbox[0]))/2, 230), subtitle,
+                  font=font_small, fill=(255, 215, 0))
+        
+        frames.append(img)
+    
+    buf = io.BytesIO()
+    frames[0].save(buf, format="GIF", save_all=True,
+                   append_images=frames[1:], duration=400, loop=0)
+    buf.seek(0)
+    buf.name = "banner.gif"
+    return buf
 
 # ------------------------------------------------------------
 # 🛠️ सर्विस और जरूरी कागजात की लिस्ट
@@ -229,20 +260,32 @@ def get_reply_keyboard():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
-    loading_msg = await update.message.reply_text("🕐 <b>बॉट शुरू हो रहा है...</b>", parse_mode=ParseMode.HTML)
-    await asyncio.sleep(0.3)
-    await loading_msg.edit_text("🕒 <b>सर्विस लोड हो रही हैं...</b>", parse_mode=ParseMode.HTML)
-    await asyncio.sleep(0.3)
-    await loading_msg.edit_text("🕕 <b>प्रीमियम इंटरफ़ेस तैयार हो रहा है...</b>", parse_mode=ParseMode.HTML)
-    await asyncio.sleep(0.3)
-    await loading_msg.edit_text("🕘 <b>तैयार है!</b>", parse_mode=ParseMode.HTML)
+    # Smooth Spinning Animation
+    frames = ["🕐", "🕒", "🕕", "🕖", "🕘", "🕚"]
+    msg = await update.message.reply_text(f"{frames[0]} <b>बॉट शुरू हो रहा है...</b>", parse_mode=ParseMode.HTML)
+    
+    for frame in frames[1:]:
+        await asyncio.sleep(0.2)
+        try:
+            await msg.edit_text(f"{frame} <b>सर्विस लोड हो रही है...</b>", parse_mode=ParseMode.HTML)
+        except:
+            pass # Ignore "Message is not modified" error
+    
+    try:
+        await msg.edit_text("🎯 <b>तैयार है!</b>", parse_mode=ParseMode.HTML)
+    except:
+        pass
     await asyncio.sleep(0.2)
-    await loading_msg.delete()
+    
+    try:
+        await msg.delete()
+    except:
+        pass
 
     total = sum(len(c["services"]) for c in CATEGORIES.values())
     
-    # डायनामिक इमेज जेनरेट करना वेलकम के लिए
-    banner = create_dynamic_banner(PAYEE_NAME, "Premium Digital Services")
+    # GIF Banner Generation
+    banner = create_animated_banner(PAYEE_NAME, "Premium Digital Services")
     welcome_text = (
         f"🙏 <b>नमस्ते, {user.first_name}!</b>\n\n"
         f"🏪 <b>{PAYEE_NAME}</b> में आपका स्वागत है!\n\n"
@@ -252,13 +295,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     if banner:
-        await update.message.reply_photo(
-            photo=banner,
-            caption=welcome_text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=main_menu_keyboard(),
-            message_effect_id=EFFECT_CONFETTI
-        )
+        try:
+            await update.message.reply_animation(
+                animation=banner,
+                caption=welcome_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=main_menu_keyboard(),
+                message_effect_id=EFFECT_CONFETTI
+            )
+        except Exception as e:
+            logger.error(f"GIF failed, sending text: {e}")
+            await update.message.reply_text(welcome_text, reply_markup=main_menu_keyboard(), parse_mode=ParseMode.HTML)
     else:
         await update.message.reply_text(
             welcome_text, 
@@ -279,7 +326,6 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ कैटेगरी नहीं मिली।")
         return
 
-    # टाइपिंग एनिमेशन
     await context.bot.send_chat_action(chat_id=query.message.chat_id, action=ChatAction.TYPING)
     await asyncio.sleep(0.4)
 
@@ -308,18 +354,18 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👇 <b>सर्विस चुनें:</b>"
     )
     
-    # यहाँ हम स्पार्कल्स (Stars) एनिमेशन के साथ नया मैसेज भेज रहे हैं
     try:
         await query.message.delete()
     except:
         pass
         
+    # Stars Animation
     await context.bot.send_message(
         chat_id=query.message.chat_id,
         text=text,
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode=ParseMode.HTML,
-        message_effect_id=EFFECT_STARS # सितारे का एनिमेशन
+        message_effect_id=EFFECT_STARS
     )
 
 
@@ -350,8 +396,6 @@ async def show_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     docs_text = ""
     if svc.get("docs"):
-        # Expandable Blockquote और Spoiler का इस्तेमाल (Premium Look)
-        # स्पॉइलर से ऐसा लगेगा जैसे कोई हिडन टेक्स्ट है, जिसे क्लिक करने पर खुलेगा
         docs_text = f"\n📄 <b>ज़रूरी जानकारी / कागजात:</b>\n<blockquote expandable><tg-spoiler>{svc['docs']}</tg-spoiler></blockquote>\n"
 
     text = (
@@ -373,7 +417,12 @@ async def show_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👇 पेमेंट करने के लिए नीचे बटन दबाएं।"
         )
 
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    except Exception as e:
+        # Ignore "Message is not modified" error (Review Point 4)
+        if "Message is not modified" not in str(e):
+            logger.error(f"Edit message error: {e}")
 
 
 async def pay_now(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -387,10 +436,16 @@ async def pay_now(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = query.message.chat_id
     msg_id = query.message.message_id
 
-    await query.edit_message_text("⚙️ <b>QR कोड बन रहा है...</b>", parse_mode=ParseMode.HTML)
-    await asyncio.sleep(0.3)
-    await query.edit_message_text("🖼️ <b>QR कोड बन रहा है....</b>", parse_mode=ParseMode.HTML)
-    await asyncio.sleep(0.3)
+    frames = ["⚙️", "🔄", "🔃"]
+    msg = await query.edit_message_text(f"{frames[0]} <b>QR कोड बन रहा है...</b>", parse_mode=ParseMode.HTML)
+    
+    for frame in frames[1:]:
+        await asyncio.sleep(0.3)
+        try:
+            await msg.edit_text(f"{frame} <b>QR कोड बन रहा है...</b>", parse_mode=ParseMode.HTML)
+        except:
+            pass
+        
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
 
     try:
@@ -469,7 +524,11 @@ async def back_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🔹 <b>UPI पेमेंट</b> — इंस्टेंट QR कोड\n\n"
         f"👇 <b>कैटेगरी चुनें:</b>"
     )
-    await query.edit_message_text(text, reply_markup=main_menu_keyboard(), parse_mode=ParseMode.HTML)
+    
+    try:
+        await query.edit_message_text(text, reply_markup=main_menu_keyboard(), parse_mode=ParseMode.HTML)
+    except:
+        pass
 
 
 async def payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -497,7 +556,7 @@ async def payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(
             chat_id=ADMIN_CHAT_ID, text=admin_text,
             reply_markup=admin_kb, parse_mode=ParseMode.HTML,
-            message_effect_id=EFFECT_FIRE
+            message_effect_id=EFFECT_THUMBS
         )
         if update.message.photo:
             await update.message.forward(chat_id=ADMIN_CHAT_ID)
@@ -619,7 +678,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=ADMIN_CHAT_ID, 
                 text=admin_text, 
                 parse_mode=ParseMode.HTML,
-                message_effect_id=EFFECT_FIRE
+                message_effect_id=EFFECT_STARS 
             )
             await update.message.reply_text(
                 "✅ <b>आपका मैसेज एडमिन को भेज दिया गया है!</b>\n\n"
@@ -663,6 +722,9 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
+    # फॉन्ट डाउनलोड करना (स्टार्ट होने से पहले)
+    ensure_hindi_font()
+    
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
