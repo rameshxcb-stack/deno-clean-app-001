@@ -1,0 +1,37 @@
+name: Run Cyber Cafe Bot (Hourly Restart)
+
+on:
+  # External cron (cron-job.org) workflow_dispatch se trigger karega
+  workflow_dispatch:
+
+concurrency:
+  group: telegram-bot
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    # Job-level timeout 58 min — command 55m par khud exit hogi, 
+    # job safely 58 min tak hi rahegi, iske baad GitHub khud kill karega
+    timeout-minutes: 58
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run bot (55 min)
+        env:
+          BOT_TOKEN:     ${{ secrets.BOT_TOKEN }}
+          UPI_ID:        ${{ secrets.UPI_ID }}
+          PAYEE_NAME:    ${{ secrets.PAYEE_NAME }}
+          ADMIN_CHAT_ID: ${{ secrets.ADMIN_CHAT_ID }}
+        # 55 min baad gracefully exit — agle hourly trigger ke liye jagah bachegi
+        run: timeout 55m python cyber_cafe_bot.py || true
