@@ -34,104 +34,68 @@ ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
 # ============================================================
 
 # ------------------------------------------------------------
-# 🛠️ सर्विस और डॉक्यूमेंट्स की लिस्ट (आसान भाषा में)
+# 🛠️ सर्विस और डॉक्यूमेंट्स की लिस्ट
 # ------------------------------------------------------------
 CATEGORIES = {
+    "pan": {
+        "name": "💳 पैन कार्ड सर्विस",
+        "desc": "नया पैन, करेक्शन, बिजनेस पैन, डिटेल्स",
+        "services": [
+            {"id": "pan_new_aadhaar", "name": "नया पैन (सिर्फ आधार से)", "price": 200, "emoji": "💳", "docs": "आधार कार्ड, फोटो, हस्ताक्षर, मोबाइल नंबर, ईमेल ID\n(आधार में मोबाइल लिंक होना जरूरी है, OTP लगेगा)"},
+            {"id": "pan_new_metric", "name": "नया पैन (मैट्रिक/जन्म प्रमाण से)", "price": 200, "emoji": "🎓", "docs": "आधार कार्ड, फोटो, हस्ताक्षर, मोबाइल नंबर, ईमेल ID\n(आधार OTP नहीं लगेगा, सीधे बन जाएगा)"},
+            {"id": "pan_correct_name", "name": "पैन करेक्शन (पूरा नाम/पिता का नाम)", "price": 1500, "emoji": "✏️", "docs": "आधार कार्ड, पुराना पैन, फोटो, हस्ताक्षर, मोबाइल, ईमेल, जन्म/मैट्रिक प्रमाण पत्र\n(आधार OTP जरूरी है)"},
+            {"id": "pan_correct_other", "name": "पैन करेक्शन (छोटा सुधार)", "price": 250, "emoji": "📝", "docs": "आधार कार्ड, पुराना पैन, फोटो, हस्ताक्षर, मोबाइल नंबर, ईमेल ID\n(आधार OTP जरूरी है)"},
+            {"id": "pan_single_letter", "name": "सिंगल लेटर पैन (बिना जन्म प्रमाण)", "price": 1500, "emoji": "🔠", "docs": "आधार PDF, फोटो, मोबाइल, ईमेल, हस्ताक्षर (या अंगूठा), पिता का नाम\n(OTP आधार में लिंक मोबाइल पर आएगा)"},
+            {"id": "pan_business", "name": "बिजनेस पैन कार्ड", "price": 2000, "emoji": "🏢", "docs": "बिजनेस का नाम, खुलने की तारीख, पूरा पता, मोबाइल, ईमेल, मालिक का आधार और पैन\n(समय: 7 से 10 दिन)"},
+            {"id": "pan_lost", "name": "खोया हुआ पैन (आधार से)", "price": 100, "emoji": "🔍", "docs": "आधार कार्ड नंबर\n(2 मिनट में पैन मिल जाएगा)"},
+            {"id": "pan_details", "name": "पैन कार्ड की जानकारी", "price": 100, "emoji": "ℹ️", "docs": "पैन कार्ड नंबर\n(नंबर है लेकिन डिटेल याद नहीं है तो)"},
+            {"id": "pan_find_mobile", "name": "मोबाइल से पैन खोजें", "price": 150, "emoji": "📱", "docs": "मोबाइल नंबर\n(मोबाइल याद है, पैन नहीं)"},
+            {"id": "pan_find_aadhaar", "name": "पैन से आधार खोजें", "price": 350, "emoji": "🆔", "docs": "पैन कार्ड नंबर\n(पैन है, आधार नंबर याद नहीं है)"}
+        ]
+    },
+    "aadhaar": {
+        "name": "🆔 आधार कार्ड सर्विस",
+        "desc": "पता बदलें, पिता का नाम, LMS सर्टिफिकेट",
+        "services": [
+            {"id": "aadhaar_address", "name": "आधार में पता बदलें", "price": 300, "emoji": "🏠", "docs": "आधार OTP लगेगा। नया पता अंग्रेजी/हिंदी में भेजें:\nVill/गाँव, Post/डाकघर, PS/थाना, Dist/जिला, State/राज्य, Pin/पिन कोड\n(गारंटी के साथ - अपडेट नहीं हुआ तो रिफंड या फ्री में दोबारा)"},
+            {"id": "aadhaar_father", "name": "आधार में पिता का नाम बदलें", "price": 250, "emoji": "👨‍🦳", "docs": "पिता के आधार में मोबाइल लिंक हो + आवेदक के आधार में भी। दोनों पर OTP जाएगा।\n(पिता के आधार वाला नाम ही आपके आधार में आएगा)"},
+            {"id": "aadhaar_lms", "name": "आधार LMS सर्टिफिकेट", "price": 1500, "emoji": "📄", "docs": "नाम, मोबाइल नंबर, ईमेल ID, राज्य, जिला, आधार नंबर"},
+            {"id": "aadhaar_ration", "name": "राशन कार्ड से आधार नंबर", "price": 400, "emoji": "🍚", "docs": "सिर्फ राशन कार्ड नंबर भेजें।\n(पूरे परिवार का मिलेगा, नाम राशन कार्ड में होना चाहिए और आखिरी 4 अंक पता हो)"}
+        ]
+    },
+    "tax": {
+        "name": "💼 टैक्स और बिजनेस",
+        "desc": "ITR, GST, MSME, RC PDF",
+        "services": [
+            {"id": "itr_filing", "name": "ITR फाइलिंग (शुरुआती ₹1000)", "price": 1000, "emoji": "📊", "docs": "आधार, पैन, खाता नंबर, IFSC कोड, बैंक का नाम, मोबाइल, OTP\n\n💰 फीस:\n• ITR-1: ₹1000\n• ITR-2: ₹1500\n• ITR-3: ₹2000\n• ITR-4: ₹3000"},
+            {"id": "gst_reg", "name": "GST रजिस्ट्रेशन (पेपर हों तो ₹2000)", "price": 2000, "emoji": "🧾", "docs": "आधार, पैन, फोटो, ईमेल, मोबाइल, बिजनेस का नाम/पता, बिजली बिल या रेंट एग्रीमेंट\n\n💰 फीस:\n• पेपर नहीं है तो: ₹3000\n• पेपर (रेंट/बिल) है तो: ₹2000\n⚡ केवल 1 घंटे में जीएसटी नंबर मिल जाएगा!"},
+            {"id": "msme_reg", "name": "MSME / उद्यम रजिस्ट्रेशन", "price": 200, "emoji": "🏭", "docs": "आधार (दोनों साइड), पैन, बैंक अकाउंट नंबर व IFSC, आधार लिंक मोबाइल, ईमेल, फर्म का नाम और पता\n(समय: तुरंत)"},
+            {"id": "rc_pdf", "name": "गाड़ी नंबर से RC PDF", "price": 100, "emoji": "🚗", "docs": "गाड़ी का नंबर भेजें"}
+        ]
+    },
     "print": {
         "name": "🖨️ प्रिंट और फोटोकॉपी",
-        "desc": "रंगीन/ब्लैक एंड व्हाइट प्रिंट, फोटोकॉपी, स्कैन",
+        "desc": "रंगीन/ब्लैक एंड व्हाइट प्रिंट, स्कैन",
         "services": [
             {"id": "print_bw",       "name": "ब्लैक एंड व्हाइट प्रिंट (1 पेज)", "price": 2,   "emoji": "📄", "docs": "PDF, वर्ड फाइल या फोटो"},
             {"id": "print_color",    "name": "रंगीन प्रिंट (1 पेज)",           "price": 10,  "emoji": "🌈", "docs": "PDF, वर्ड फाइल या फोटो"},
             {"id": "photocopy",      "name": "फोटोकॉपी (1 पेज)",               "price": 1,   "emoji": "📑", "docs": "ओरिजिनल डॉक्यूमेंट"},
             {"id": "scan",           "name": "स्कैनिंग (1 पेज)",               "price": 5,   "emoji": "📷", "docs": "ओरिजिनल डॉक्यूमेंट"},
             {"id": "lam_a4",         "name": "लेमिनेशन A4",                    "price": 30,  "emoji": "🪪", "docs": "A4 साइज का डॉक्यूमेंट"},
-            {"id": "lam_id",         "name": "लेमिनेशन आईडी कार्ड",             "price": 15,  "emoji": "🆔", "docs": "आईडी कार्ड (आधार/पैन आदि)"},
-            {"id": "passport_photo", "name": "पासपोर्ट साइज फोटो (8 कॉपी)",    "price": 50,  "emoji": "👤", "docs": "कुछ नहीं चाहिए, बस आना है"},
-            {"id": "photo_print",    "name": "फोटो प्रिंट (1 कॉपी)",           "price": 15,  "emoji": "🖼️", "docs": "मोबाइल में फोटो"},
-        ],
+            {"id": "passport_photo", "name": "पासपोर्ट साइज फोटो (8 कॉपी)",    "price": 50,  "emoji": "👤", "docs": "कुछ नहीं चाहिए, बस आना है"}
+        ]
     },
     "gov": {
-        "name": "🏛️ सरकारी काम (Government)",
-        "desc": "पैन, आधार, वोटर आईडी, लाइसेंस आदि",
+        "name": "🏛️ अन्य सरकारी काम",
+        "desc": "वोटर आईडी, ड्राइविंग लाइसेंस आदि",
         "services": [
-            {"id": "pan_new",        "name": "नया पैन कार्ड",                  "price": 150, "emoji": "💳", "docs": "आधार कार्ड, फोटो, सिग्नेचर"},
-            {"id": "pan_correct",    "name": "पैन कार्ड में सुधार",            "price": 200, "emoji": "✏️", "docs": "आधार, पुराना पैन, फोटो"},
-            {"id": "aadhaar_update", "name": "आधार कार्ड अपडेट",               "price": 100, "emoji": "🆔", "docs": "आधार कार्ड, एड्रेस प्रूफ"},
             {"id": "voter_new",      "name": "नया वोटर आईडी",                  "price": 100, "emoji": "🗳️", "docs": "आधार कार्ड, फोटो, एड्रेस प्रूफ"},
             {"id": "dl_learner",     "name": "ड्राइविंग लाइसेंस (लर्निंग)",    "price": 500, "emoji": "🚗", "docs": "आधार कार्ड, फोटो, मेडिकल फॉर्म"},
             {"id": "dl_permanent",   "name": "ड्राइविंग लाइसेंस (पक्का)",      "price": 800, "emoji": "🚙", "docs": "लर्निंग लाइसेंस, आधार, फोटो"},
-            {"id": "ration_card",    "name": "राशन कार्ड",                     "price": 150, "emoji": "🍚", "docs": "आधार कार्ड, एड्रेस प्रूफ, फोटो"},
             {"id": "birth_cert",     "name": "जन्म प्रमाण पत्र",               "price": 200, "emoji": "👶", "docs": "अस्पताल की पर्ची, माता-पिता का आधार"},
-            {"id": "income_cert",    "name": "आय प्रमाण पत्र",                 "price": 150, "emoji": "💰", "docs": "आधार, राशन कार्ड, स्वयं घोषणा पत्र"},
-            {"id": "caste_cert",     "name": "जाति प्रमाण पत्र",               "price": 150, "emoji": "📜", "docs": "आधार, पिता का जाति प्रमाण पत्र"},
-            {"id": "eshram",         "name": "ई-श्रम कार्ड",                   "price": 50,  "emoji": "👷", "docs": "आधार कार्ड, बैंक पासबुक"},
-            {"id": "ayushman",       "name": "आयुष्मान कार्ड",                 "price": 50,  "emoji": "🏥", "docs": "आधार कार्ड, राशन कार्ड"},
-        ],
-    },
-    "forms": {
-        "name": "📝 ऑनलाइन एग्जाम फॉर्म",
-        "desc": "SSC, रेलवे, पुलिस, कॉलेज के फॉर्म",
-        "services": [
-            {"id": "ssc_form",         "name": "SSC एग्जाम फॉर्म",            "price": 100, "emoji": "📋", "docs": "10वीं/12वीं की मार्कशीट, आधार, फोटो, साइन"},
-            {"id": "railway_form",     "name": "रेलवे एग्जाम फॉर्म",          "price": 100, "emoji": "🚂", "docs": "10वीं/12वीं की मार्कशीट, आधार, फोटो, साइन"},
-            {"id": "police_form",      "name": "पुलिस भर्ती फॉर्म",           "price": 100, "emoji": "👮", "docs": "मार्कशीट, आधार, जाति प्रमाण पत्र, फोटो"},
-            {"id": "college_form",     "name": "कॉलेज एडमिशन फॉर्म",          "price": 200, "emoji": "🎓", "docs": "12वीं की मार्कशीट, TC, माइग्रेशन, आधार"},
-            {"id": "scholarship_form", "name": "स्कॉलरशिप फॉर्म",             "price": 100, "emoji": "🎖️", "docs": "आधार, मार्कशीट, बैंक पासबुक"},
-        ],
-    },
-    "doc": {
-        "name": "📄 डॉक्यूमेंट के काम",
-        "desc": "टाइपिंग, रिज्यूमे, ईमेल आईडी आदि",
-        "services": [
-            {"id": "typing",          "name": "डॉक्यूमेंट टाइपिंग (1 पेज)",   "price": 20,  "emoji": "⌨️", "docs": "हाथ से लिखा हुआ कॉपी या पुरानी फाइल"},
-            {"id": "resume",          "name": "रिज्यूमे (CV) बनाना",         "price": 100, "emoji": "📃", "docs": "पढ़ाई की डिटेल, फोटो, काम का अनुभव"},
-            {"id": "email_create",    "name": "ईमेल आईडी बनाना",             "price": 30,  "emoji": "📧", "docs": "मोबाइल नंबर, नाम, जन्मतिथि"},
-            {"id": "naukri_profile",  "name": "Naukri.com प्रोफाइल",         "price": 100, "emoji": "🔍", "docs": "रिज्यूमे, पढ़ाई की डिटेल"},
-        ],
-    },
-    "bill": {
-        "name": "💡 बिल पेमेंट और रिचार्ज",
-        "desc": "मोबाइल, DTH, बिजली बिल, पानी बिल",
-        "services": [
-            {"id": "mobile_recharge",   "name": "मोबाइल रिचार्ज",              "price": 10, "emoji": "📱", "docs": "मोबाइल नंबर और राशि"},
-            {"id": "dth_recharge",      "name": "DTH रिचार्ज",                 "price": 20, "emoji": "📡", "docs": "कस्टमर ID या रजिस्टर्ड नंबर"},
-            {"id": "electricity_bill",  "name": "बिजली बिल पेमेंट",            "price": 20, "emoji": "💡", "docs": "कंज्यूमर नंबर या पुराना बिल"},
-            {"id": "gas_bill",          "name": "गैस बिल पेमेंट",              "price": 20, "emoji": "🔥", "docs": "कंज्यूमर नंबर"},
-            {"id": "money_transfer",    "name": "पैसे भेजें (Money Transfer)",  "price": 50, "emoji": "💸", "docs": "बैंक डिटेल या मोबाइल नंबर"},
-        ],
-    },
-    "ticket": {
-        "name": "🎫 टिकट बुकिंग",
-        "desc": "ट्रेन, बस, फ्लाइट, मूवी टिकट",
-        "services": [
-            {"id": "train_ticket",  "name": "ट्रेन टिकट (IRCTC)", "price": 50,  "emoji": "🚆", "docs": "आधार/आईडी कार्ड, यात्रा की डिटेल"},
-            {"id": "bus_ticket",    "name": "बस टिकट बुकिंग",   "price": 30,  "emoji": "🚌", "docs": "यात्री का नाम, उम्र, मोबाइल"},
-            {"id": "flight_ticket", "name": "फ्लाइट टिकट बुकिंग","price": 100, "emoji": "✈️", "docs": "आईडी प्रूफ, यात्रा की तारीख"},
-        ],
-    },
-    "computer": {
-        "name": "💻 कंप्यूटर के काम",
-        "desc": "सॉफ्टवेयर, एंटीवायरस, डेटा रिकवरी",
-        "services": [
-            {"id": "windows_install",  "name": "विंडोज इंस्टॉल",        "price": 300, "emoji": "🪟", "docs": "लैपटॉप/कंप्यूटर (कैफे लेकर आएं)"},
-            {"id": "antivirus",        "name": "एंटीवायरस इंस्टॉल",     "price": 200, "emoji": "🛡️", "docs": "लैपटॉप/कंप्यूटर"},
-            {"id": "data_recovery",    "name": "डेटा रिकवरी",          "price": 500, "emoji": "💿", "docs": "हार्ड डिस्क / पेन ड्राइव"},
-            {"id": "printer_setup",    "name": "प्रिंटर सेटअप",         "price": 100, "emoji": "🖨️", "docs": "प्रिंटर और लैपटॉप"},
-        ],
-    },
-    "advanced": {
-        "name": "⚡ एडवांस काम",
-        "desc": "GST, ITR, MSME, डिजिटल सिग्नेचर",
-        "services": [
-            {"id": "gst_reg",          "name": "GST रजिस्ट्रेशन",         "price": 500,  "emoji": "🧾", "docs": "आधार, पैन, फोटो, बैंक पासबुक"},
-            {"id": "itr_filing",       "name": "ITR (इनकम टैक्स) फाइलिंग", "price": 500,  "emoji": "📊", "docs": "पैन, आधार, बैंक स्टेटमेंट, फॉर्म 16"},
-            {"id": "msme_reg",         "name": "MSME (उद्यम) रजिस्ट्रेशन", "price": 500,  "emoji": "🏭", "docs": "आधार कार्ड, पैन कार्ड"},
-            {"id": "digital_sig",      "name": "डिजिटल सिग्नेचर",        "price": 1000, "emoji": "🖊️", "docs": "पैन, आधार, मोबाइल, ईमेल, वीडियो (वेरिफिकेशन के लिए)"},
-            {"id": "photo_edit",       "name": "फोटो एडिटिंग",            "price": 50,   "emoji": "🎨", "docs": "ओरिजिनल फोटो, क्या बदलना है"},
-            {"id": "video_edit",       "name": "वीडियो एडिटिंग",          "price": 100,  "emoji": "🎥", "docs": "वीडियो क्लिप, क्या करना है"},
-        ],
-    },
+            {"id": "eshram",         "name": "ई-श्रम कार्ड",                   "price": 50,  "emoji": "👷", "docs": "आधार कार्ड, बैंक पासबुक"}
+        ]
+    }
 }
 
 def find_service(service_id):
@@ -148,10 +112,13 @@ def main_menu_keyboard():
         if i + 1 < len(cats):
             row.append(InlineKeyboardButton(cats[i+1][1]["name"], callback_data=f"cat_{cats[i+1][0]}"))
         keyboard.append(row)
+    
+    # नया बटन: अन्य काम के लिए
+    keyboard.append([InlineKeyboardButton("📝 अन्य काम (कोई और सर्विस)", callback_data="other_service")])
+    
     return InlineKeyboardMarkup(keyboard)
 
 def get_reply_keyboard():
-    # नीचे हमेशा दिखने वाले बटन
     reply_keyboard = [
         [KeyboardButton("🛍️ सर्विस मेनू")],
         [KeyboardButton("🆘 मदद"), KeyboardButton("📞 संपर्क करें")]
@@ -287,7 +254,7 @@ async def pay_now(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🆔 <b>UPI ID:</b> <code>{UPI_ID}</code>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"📸 <b>QR स्कैन करके पेमेंट करें</b>\n"
-            f"पेमेंट के बाद अपना <b>स्क्रीनशॉट यहाँ भेजें</b>।\n"
+            f"पेमेंट के बाद अपना <b>स्क्रीनशॉट यहाँ भेजें</b> और अपने डॉक्यूमेंट्स भी भेज दें।\n"
             f"चेक करने के बाद आपका काम शुरू हो जाएगा। ✅"
         )
         await context.bot.send_photo(chat_id=chat_id, photo=buf, caption=caption, parse_mode=ParseMode.HTML)
@@ -298,11 +265,34 @@ async def pay_now(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text="❌ QR कोड नहीं बन पाया। एडमिन से बात करें।"
         )
 
+# ------------------------------------------------------------
+# नया हैंडलर: अन्य काम के लिए
+# ------------------------------------------------------------
+async def ask_other_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    # यूजर को स्टेट में डाल दो कि वो कस्टम रिक्वेस्ट टाइप करने वाला है
+    context.user_data['awaiting_custom_request'] = True
+    
+    await query.edit_message_text(
+        "📝 <b>अन्य काम (Other Service)</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        "अगर आपको कोई ऐसा काम करवाना है जो लिस्ट में नहीं है, तो आप यहाँ लिख सकते हैं।\n\n"
+        "👇 <b>कृपया अपना काम टाइप करके भेजें:</b>\n"
+        "<i>(जैसे: 'मुझे एक वीडियो एडिट करवाना है' या 'मुझे कॉलेज का फॉर्म भरना है')</i>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 मुख्य मेनू", callback_data="back_main")]])
+    )
+
 
 async def back_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     context.user_data.pop("selected_service", None)
+    # अगर कस्टम रिक्वेस्ट का स्टेट चालू था तो उसे बंद कर दो
+    context.user_data.pop("awaiting_custom_request", None) 
+    
     total = sum(len(c["services"]) for c in CATEGORIES.values())
     text = (
         f"🏪 <b>{PAYEE_NAME}</b>\n"
@@ -321,7 +311,7 @@ async def payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
     amount = svc["price"] if svc else "N/A"
 
     admin_text = (
-        f"🔔 <b>नया पेमेंट स्क्रीनशॉट</b>\n"
+        f"🔔 <b>नया पेमेंट या डॉक्यूमेंट</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"👤 <b>नाम:</b> {user.full_name}\n"
         f"🆔 <b>यूजर ID:</b> <code>{user.id}</code>\n"
@@ -348,7 +338,7 @@ async def payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.exception("Admin message failed")
 
     await update.message.reply_text(
-        f"✅ <b>स्क्रीनशॉट मिल गया है!</b>\n"
+        f"✅ <b>स्क्रीनशॉट/डॉक्यूमेंट मिल गया है!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🛠️ <b>सर्विस:</b> {service_name}\n"
         f"💰 <b>पैसे:</b> ₹{amount}\n\n"
@@ -358,7 +348,6 @@ async def payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     context.user_data.pop("selected_service", None)
     
-    # पेमेंट के बाद वापस मेनू का ऑप्शन
     await update.message.reply_text(
         "क्या आपको कोई और काम है? नीचे मेनू से चुनें 👇",
         reply_markup=main_menu_keyboard()
@@ -379,9 +368,9 @@ async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=uid,
                 text=(
-                    f"✅ <b>पेमेंट मिल गया!</b>\n"
+                    f"✅ <b>पेमेंट/डॉक्यूमेंट मिल गया!</b>\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"आपका पेमेंट कन्फर्म हो गया है।\n"
+                    f"आपका काम कन्फर्म हो गया है।\n"
                     f"अब आपका काम जल्दी शुरू होगा। 🚀\n\n"
                     f"धन्यवाद! 🙏"
                 ),
@@ -396,10 +385,10 @@ async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=uid,
                 text=(
-                    f"❌ <b>पेमेंट रिजेक्ट हो गया</b>\n"
+                    f"❌ <b>रिजेक्ट हो गया</b>\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"आपका पेमेंट वेरिफाई नहीं हो पाया।\n"
-                    f"एडमिन से बात करें या दोबारा स्क्रीनशॉट भेजें।"
+                    f"आपका पेमेंट या डॉक्यूमेंट वेरिफाई नहीं हो पाया।\n"
+                    f"एडमिन से बात करें या दोबारा भेजें।"
                 ),
                 parse_mode=ParseMode.HTML,
             )
@@ -421,7 +410,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"2️⃣ सर्विस चुनें\n"
         f"3️⃣ 'पेमेंट करें' दबाएं\n"
         f"4️⃣ QR स्कैन करके पैसे भेजें\n"
-        f"5️⃣ स्क्रीनशॉट भेजें\n"
+        f"5️⃣ स्क्रीनशॉट और डॉक्यूमेंट्स भेजें\n"
         f"6️⃣ एडमिन चेक करेगा\n\n"
         f"📞 <b>कॉन्टैक्ट:</b> {PAYEE_NAME}"
     )
@@ -430,6 +419,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("selected_service", None)
+    context.user_data.pop("awaiting_custom_request", None)
     await update.message.reply_text(
         "🔄 <b>काम रद्द कर दिया गया है।</b>\n\nनीचे मेनू से दोबारा शुरू करें।",
         reply_markup=main_menu_keyboard(),
@@ -437,11 +427,39 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# नया टेक्स्ट हैंडलर (बटन और रैंडम मैसेज के लिए)
+# नया टेक्स्ट हैंडलर (बटन, कस्टम रिक्वेस्ट और रैंडम मैसेज के लिए)
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user = update.effective_user
     
+    # 1. चेक करें कि क्या यूजर 'अन्य काम' के लिए मैसेज टाइप कर रहा है?
+    if context.user_data.get('awaiting_custom_request'):
+        context.user_data['awaiting_custom_request'] = False # स्टेट रीसेट करें
+        
+        admin_text = (
+            f"🔔 <b>नया कस्टम रिक्वेस्ट (Other Service)</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 <b>नाम:</b> {user.full_name}\n"
+            f"🆔 <b>यूजर ID:</b> <code>{user.id}</code>\n"
+            f"📱 <b>यूजरनेम:</b> @{user.username or 'N/A'}\n"
+            f"💬 <b>काम:</b> {text}\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━"
+        )
+        try:
+            await context.bot.send_message(chat_id=ADMIN_CHAT_ID, text=admin_text, parse_mode=ParseMode.HTML)
+            await update.message.reply_text(
+                "✅ <b>आपका मैसेज एडमिन को भेज दिया गया है!</b>\n\n"
+                "एडमिन जल्द ही आपसे संपर्क करके रेट और डिटेल्स बताएगा।\n"
+                "धन्यवाद! 🙏",
+                reply_markup=main_menu_keyboard(),
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.error(f"Failed to send custom request to admin: {e}")
+            await update.message.reply_text("❌ मैसेज भेजने में दिक्कत आई। कृपया बाद में कोशिश करें।")
+        return
+
+    # 2. अगर नीचे वाले बटन दबाए गए हैं
     if "सर्विस मेनू" in text:
         total = sum(len(c["services"]) for c in CATEGORIES.values())
         await update.message.reply_text(
@@ -463,7 +481,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML
         )
     else:
-        # अगर कोई कुछ और टाइप करे
+        # 3. अगर कोई कुछ और टाइप करे
         await update.message.reply_text(
             f"नमस्ते {user.first_name}! मैं आपकी क्या मदद कर सकता हूँ?\n\n"
             f"काम करवाने के लिए नीचे मेनू से चुनें या <b>🛍️ सर्विस मेनू</b> बटन दबाएं।",
@@ -481,6 +499,7 @@ def main():
     app.add_handler(CallbackQueryHandler(show_category, pattern="^cat_"))
     app.add_handler(CallbackQueryHandler(show_service, pattern="^svc_"))
     app.add_handler(CallbackQueryHandler(pay_now, pattern="^pay_now$"))
+    app.add_handler(CallbackQueryHandler(ask_other_service, pattern="^other_service$")) # नया हैंडलर
     app.add_handler(CallbackQueryHandler(back_main, pattern="^back_main$"))
     app.add_handler(CallbackQueryHandler(admin_action, pattern="^(approve|reject)_"))
     
