@@ -3,7 +3,10 @@ import os
 import asyncio
 import logging
 from urllib.parse import quote
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update, InlineKeyboardButton, InlineKeyboardMarkup, 
+    ReplyKeyboardMarkup, KeyboardButton
+)
 from telegram.constants import ChatAction, ParseMode
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -30,126 +33,106 @@ PAYEE_NAME    = os.getenv("PAYEE_NAME", "My Cyber Cafe")
 ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
 # ============================================================
 
+# ------------------------------------------------------------
+# 🛠️ SERVICES & DOCUMENTS LIST
+# ------------------------------------------------------------
 CATEGORIES = {
     "print": {
         "name": "🖨️ Printing & Photocopy",
         "desc": "B&W/Color print, xerox, scan, lamination",
         "services": [
-            {"id": "print_bw",       "name": "B&W Print (Per Page)",     "price": 2,   "emoji": "📄"},
-            {"id": "print_color",    "name": "Color Print (Per Page)",   "price": 10,  "emoji": "🌈"},
-            {"id": "photocopy",      "name": "Photocopy (Per Page)",     "price": 1,   "emoji": "📑"},
-            {"id": "scan",           "name": "Scanning (Per Page)",      "price": 5,   "emoji": "📷"},
-            {"id": "lam_a4",         "name": "Lamination A4",            "price": 30,  "emoji": "🪪"},
-            {"id": "lam_a3",         "name": "Lamination A3",            "price": 50,  "emoji": "📰"},
-            {"id": "lam_id",         "name": "Lamination ID Card",       "price": 15,  "emoji": "🆔"},
-            {"id": "passport_photo", "name": "Passport Photo (8 Copies)", "price": 50,  "emoji": "👤"},
-            {"id": "photo_print",    "name": "Photo Print (Per Copy)",   "price": 15,  "emoji": "🖼️"},
-            {"id": "id_card_print",  "name": "ID Card Print",            "price": 30,  "emoji": "🎫"},
-            {"id": "visiting_card",  "name": "Visiting Card (100 pcs)",  "price": 300, "emoji": "📇"},
-            {"id": "flex_banner",    "name": "Flex Banner (Per Sq Ft)",  "price": 50,  "emoji": "🎨"},
+            {"id": "print_bw",       "name": "B&W Print (Per Page)",     "price": 2,   "emoji": "📄", "docs": "PDF, Word, ya Photo"},
+            {"id": "print_color",    "name": "Color Print (Per Page)",   "price": 10,  "emoji": "🌈", "docs": "PDF, Word, ya Photo"},
+            {"id": "photocopy",      "name": "Photocopy (Per Page)",     "price": 1,   "emoji": "📑", "docs": "Original Document"},
+            {"id": "scan",           "name": "Scanning (Per Page)",      "price": 5,   "emoji": "📷", "docs": "Original Document"},
+            {"id": "lam_a4",         "name": "Lamination A4",            "price": 30,  "emoji": "🪪", "docs": "A4 Size Document"},
+            {"id": "lam_id",         "name": "Lamination ID Card",       "price": 15,  "emoji": "🆔", "docs": "ID Card (Aadhaar/PAN etc.)"},
+            {"id": "passport_photo", "name": "Passport Photo (8 Copies)", "price": 50,  "emoji": "👤", "docs": "Koi document nahi, bas aana hai"},
+            {"id": "photo_print",    "name": "Photo Print (Per Copy)",   "price": 15,  "emoji": "🖼️", "docs": "Mobile mein Photo"},
         ],
     },
     "gov": {
         "name": "🏛️ Government Services",
-        "desc": "PAN, Aadhaar, Voter ID, License aur baaki",
+        "desc": "PAN, Aadhaar, Voter ID, License",
         "services": [
-            {"id": "pan_new",        "name": "PAN Card (New)",              "price": 150, "emoji": "💳"},
-            {"id": "pan_correct",    "name": "PAN Card Correction",         "price": 200, "emoji": "✏️"},
-            {"id": "aadhaar_update", "name": "Aadhaar Update/Correction",   "price": 100, "emoji": "🆔"},
-            {"id": "voter_new",      "name": "Voter ID (New)",              "price": 100, "emoji": "🗳️"},
-            {"id": "voter_correct",  "name": "Voter ID Correction",         "price": 100, "emoji": "✏️"},
-            {"id": "dl_learner",     "name": "Driving License (Learner)",   "price": 500, "emoji": "🚗"},
-            {"id": "dl_permanent",   "name": "Driving License (Permanent)", "price": 800, "emoji": "🚙"},
-            {"id": "ration_card",    "name": "Ration Card",                 "price": 150, "emoji": "🍚"},
-            {"id": "birth_cert",     "name": "Birth Certificate",           "price": 200, "emoji": "👶"},
-            {"id": "death_cert",     "name": "Death Certificate",           "price": 200, "emoji": "🕊️"},
-            {"id": "income_cert",    "name": "Income Certificate",          "price": 150, "emoji": "💰"},
-            {"id": "caste_cert",     "name": "Caste Certificate",           "price": 150, "emoji": "📜"},
-            {"id": "domicile",       "name": "Domicile Certificate",        "price": 150, "emoji": "🏠"},
-            {"id": "marriage_cert",  "name": "Marriage Certificate",        "price": 300, "emoji": "💍"},
-            {"id": "eshram",         "name": "E-Shram Card",                "price": 50,  "emoji": "👷"},
-            {"id": "ayushman",       "name": "Ayushman Card",               "price": 50,  "emoji": "🏥"},
-            {"id": "pm_kisan",       "name": "PM Kisan Registration",       "price": 100, "emoji": "🌾"},
-            {"id": "passport_apply", "name": "Passport Application",        "price": 500, "emoji": "🛂"},
+            {"id": "pan_new",        "name": "PAN Card (New)",              "price": 150, "emoji": "💳", "docs": "Aadhaar Card, Photo, Signature"},
+            {"id": "pan_correct",    "name": "PAN Card Correction",         "price": 200, "emoji": "✏️", "docs": "Aadhaar, Purana PAN, Photo"},
+            {"id": "aadhaar_update", "name": "Aadhaar Update/Correction",   "price": 100, "emoji": "🆔", "docs": "Aadhaar Card, Address Proof"},
+            {"id": "voter_new",      "name": "Voter ID (New)",              "price": 100, "emoji": "🗳️", "docs": "Aadhaar Card, Photo, Address Proof"},
+            {"id": "dl_learner",     "name": "Driving License (Learner)",   "price": 500, "emoji": "🚗", "docs": "Aadhaar Card, Photo, Medical Form 1A"},
+            {"id": "dl_permanent",   "name": "Driving License (Permanent)", "price": 800, "emoji": "🚙", "docs": "Learner License, Aadhaar, Photo"},
+            {"id": "ration_card",    "name": "Ration Card",                 "price": 150, "emoji": "🍚", "docs": "Aadhaar Card, Address Proof, Photo"},
+            {"id": "birth_cert",     "name": "Birth Certificate",           "price": 200, "emoji": "👶", "docs": "Hospital Slip, Parents Aadhaar"},
+            {"id": "income_cert",    "name": "Income Certificate",          "price": 150, "emoji": "💰", "docs": "Aadhaar, Ration Card, Self Declaration"},
+            {"id": "caste_cert",     "name": "Caste Certificate",           "price": 150, "emoji": "📜", "docs": "Aadhaar, Father's Caste Cert"},
+            {"id": "eshram",         "name": "E-Shram Card",                "price": 50,  "emoji": "👷", "docs": "Aadhaar Card, Bank Passbook"},
+            {"id": "ayushman",       "name": "Ayushman Card",               "price": 50,  "emoji": "🏥", "docs": "Aadhaar Card, Ration Card"},
         ],
     },
     "forms": {
         "name": "📝 Online Exam Forms",
-        "desc": "SSC, Railway, Bank, Police, College forms",
+        "desc": "SSC, Railway, Police, College forms",
         "services": [
-            {"id": "ssc_form",         "name": "SSC Exam Form",             "price": 100, "emoji": "📋"},
-            {"id": "railway_form",     "name": "Railway Exam Form",         "price": 100, "emoji": "🚂"},
-            {"id": "bank_form",        "name": "Bank Exam Form",            "price": 100, "emoji": "🏦"},
-            {"id": "police_form",      "name": "Police Bharti Form",        "price": 100, "emoji": "👮"},
-            {"id": "college_form",     "name": "College Admission Form",    "price": 200, "emoji": "🎓"},
-            {"id": "scholarship_form", "name": "Scholarship Form",          "price": 100, "emoji": "🎖️"},
-            {"id": "govt_job_form",    "name": "Government Job Form",       "price": 100, "emoji": "💼"},
-            {"id": "army_form",        "name": "Army/Navy/Airforce Form",   "price": 150, "emoji": "⚔️"},
+            {"id": "ssc_form",         "name": "SSC Exam Form",             "price": 100, "emoji": "📋", "docs": "10th/12th Marksheet, Aadhaar, Photo, Sign"},
+            {"id": "railway_form",     "name": "Railway Exam Form",         "price": 100, "emoji": "🚂", "docs": "10th/12th Marksheet, Aadhaar, Photo, Sign"},
+            {"id": "police_form",      "name": "Police Bharti Form",        "price": 100, "emoji": "👮", "docs": "Marksheet, Aadhaar, Caste Cert, Photo"},
+            {"id": "college_form",     "name": "College Admission Form",    "price": 200, "emoji": "🎓", "docs": "12th Marksheet, TC, Migration, Aadhaar"},
+            {"id": "scholarship_form", "name": "Scholarship Form",          "price": 100, "emoji": "🎖️", "docs": "Aadhaar, Marksheet, Bank Passbook"},
         ],
     },
     "doc": {
         "name": "📄 Document Services",
         "desc": "Typing, Resume, Email ID, Naukri profile",
         "services": [
-            {"id": "typing",          "name": "Document Typing (Per Page)", "price": 20,  "emoji": "⌨️"},
-            {"id": "resume",          "name": "Resume/CV Making",           "price": 100, "emoji": "📃"},
-            {"id": "cover_letter",    "name": "Cover Letter",               "price": 50,  "emoji": "✉️"},
-            {"id": "email_create",    "name": "Email ID Creation",          "price": 30,  "emoji": "📧"},
-            {"id": "naukri_profile",  "name": "Naukri.com Profile",         "price": 100, "emoji": "🔍"},
-            {"id": "linkedin_profile","name": "LinkedIn Profile Setup",     "price": 150, "emoji": "💼"},
+            {"id": "typing",          "name": "Document Typing",            "price": 20,  "emoji": "⌨️", "docs": "Handwritten Copy ya Old File"},
+            {"id": "resume",          "name": "Resume/CV Making",           "price": 100, "emoji": "📃", "docs": "Qualification Details, Photo, Experience"},
+            {"id": "email_create",    "name": "Email ID Creation",          "price": 30,  "emoji": "📧", "docs": "Mobile Number, Name, DOB"},
+            {"id": "naukri_profile",  "name": "Naukri.com Profile",         "price": 100, "emoji": "🔍", "docs": "Resume, Qualification Details"},
         ],
     },
     "bill": {
         "name": "💡 Bill Payment & Recharge",
-        "desc": "Mobile, DTH, electricity, water bill, transfer",
+        "desc": "Mobile, DTH, electricity, water bill",
         "services": [
-            {"id": "mobile_recharge",   "name": "Mobile Recharge",              "price": 10, "emoji": "📱"},
-            {"id": "dth_recharge",      "name": "DTH Recharge",                 "price": 20, "emoji": "📡"},
-            {"id": "electricity_bill",  "name": "Electricity Bill Payment",     "price": 20, "emoji": "💡"},
-            {"id": "water_bill",        "name": "Water Bill Payment",           "price": 20, "emoji": "💧"},
-            {"id": "gas_bill",          "name": "Gas Bill Payment",             "price": 20, "emoji": "🔥"},
-            {"id": "broadband_bill",    "name": "Broadband Bill Payment",       "price": 20, "emoji": "🌐"},
-            {"id": "money_transfer",    "name": "Money Transfer (Up to ₹5000)", "price": 50, "emoji": "💸"},
+            {"id": "mobile_recharge",   "name": "Mobile Recharge",              "price": 10, "emoji": "📱", "docs": "Mobile Number & Amount"},
+            {"id": "dth_recharge",      "name": "DTH Recharge",                 "price": 20, "emoji": "📡", "docs": "Customer ID / Registered Number"},
+            {"id": "electricity_bill",  "name": "Electricity Bill Payment",     "price": 20, "emoji": "💡", "docs": "Consumer Number ya Purana Bill"},
+            {"id": "gas_bill",          "name": "Gas Bill Payment",             "price": 20, "emoji": "🔥", "docs": "Consumer Number"},
+            {"id": "money_transfer",    "name": "Money Transfer",               "price": 50, "emoji": "💸", "docs": "Bank Details / Mobile Number"},
         ],
     },
     "ticket": {
         "name": "🎫 Ticket Booking",
         "desc": "Train, bus, flight, movie tickets",
         "services": [
-            {"id": "train_ticket",  "name": "Train Ticket (IRCTC)", "price": 50,  "emoji": "🚆"},
-            {"id": "bus_ticket",    "name": "Bus Ticket Booking",   "price": 30,  "emoji": "🚌"},
-            {"id": "flight_ticket", "name": "Flight Ticket Booking","price": 100, "emoji": "✈️"},
-            {"id": "movie_ticket",  "name": "Movie Ticket Booking", "price": 30,  "emoji": "🎬"},
+            {"id": "train_ticket",  "name": "Train Ticket (IRCTC)", "price": 50,  "emoji": "🚆", "docs": "Aadhaar/ID Card, Journey Details"},
+            {"id": "bus_ticket",    "name": "Bus Ticket Booking",   "price": 30,  "emoji": "🚌", "docs": "Passenger Name, Age, Mobile"},
+            {"id": "flight_ticket", "name": "Flight Ticket Booking","price": 100, "emoji": "✈️", "docs": "ID Proof, Travel Dates"},
         ],
     },
     "computer": {
         "name": "💻 Computer Services",
-        "desc": "Software, antivirus, data recovery, setup",
+        "desc": "Software, antivirus, data recovery",
         "services": [
-            {"id": "software_install", "name": "Software Installation",  "price": 100, "emoji": "💾"},
-            {"id": "antivirus",        "name": "Antivirus Installation", "price": 200, "emoji": "🛡️"},
-            {"id": "windows_install",  "name": "Windows Installation",   "price": 300, "emoji": "🪟"},
-            {"id": "data_recovery",    "name": "Data Recovery",          "price": 500, "emoji": "💿"},
-            {"id": "whatsapp_setup",   "name": "WhatsApp Setup",         "price": 30,  "emoji": "💬"},
-            {"id": "upi_setup",        "name": "UPI Setup",              "price": 30,  "emoji": "📲"},
-            {"id": "printer_setup",    "name": "Printer Setup",          "price": 100, "emoji": "🖨️"},
+            {"id": "windows_install",  "name": "Windows Installation",   "price": 300, "emoji": "🪟", "docs": "Laptop/PC (Cafe mein leke aayein)"},
+            {"id": "antivirus",        "name": "Antivirus Installation", "price": 200, "emoji": "🛡️", "docs": "Laptop/PC"},
+            {"id": "data_recovery",    "name": "Data Recovery",          "price": 500, "emoji": "💿", "docs": "Hard Disk / Pen Drive"},
+            {"id": "printer_setup",    "name": "Printer Setup",          "price": 100, "emoji": "🖨️", "docs": "Printer & Laptop"},
         ],
     },
     "advanced": {
         "name": "⚡ Advanced Services",
-        "desc": "GST, ITR, MSME, Digital Signature, Editing",
+        "desc": "GST, ITR, MSME, Digital Signature",
         "services": [
-            {"id": "gst_reg",          "name": "GST Registration",         "price": 500,  "emoji": "🧾"},
-            {"id": "itr_filing",       "name": "ITR Filing",               "price": 500,  "emoji": "📊"},
-            {"id": "msme_reg",         "name": "MSME/Udyam Registration",  "price": 500,  "emoji": "🏭"},
-            {"id": "digital_sig",      "name": "Digital Signature",        "price": 1000, "emoji": "🖊️"},
-            {"id": "photo_edit",       "name": "Photo Editing",            "price": 50,   "emoji": "🎨"},
-            {"id": "video_edit",       "name": "Video Editing",            "price": 100,  "emoji": "🎥"},
-            {"id": "visiting_design",  "name": "Visiting Card Design",     "price": 100,  "emoji": "📇"},
+            {"id": "gst_reg",          "name": "GST Registration",         "price": 500,  "emoji": "🧾", "docs": "Aadhaar, PAN, Photo, Bank Passbook"},
+            {"id": "itr_filing",       "name": "ITR Filing",               "price": 500,  "emoji": "📊", "docs": "PAN, Aadhaar, Bank Statement, Form 16"},
+            {"id": "msme_reg",         "name": "MSME/Udyam Registration",  "price": 500,  "emoji": "🏭", "docs": "Aadhaar Card, PAN Card"},
+            {"id": "digital_sig",      "name": "Digital Signature",        "price": 1000, "emoji": "🖊️", "docs": "PAN, Aadhaar, Mobile, Email, Video (for verification)"},
+            {"id": "photo_edit",       "name": "Photo Editing",            "price": 50,   "emoji": "🎨", "docs": "Original Photo, Requirement"},
+            {"id": "video_edit",       "name": "Video Editing",            "price": 100,  "emoji": "🎥", "docs": "Video Clip, Instructions"},
         ],
     },
 }
-
 
 def find_service(service_id):
     for cat in CATEGORIES.values():
@@ -157,7 +140,6 @@ def find_service(service_id):
             if svc["id"] == service_id:
                 return svc
     return None
-
 
 def main_menu_keyboard():
     keyboard, cats = [], list(CATEGORIES.items())
@@ -168,6 +150,13 @@ def main_menu_keyboard():
         keyboard.append(row)
     return InlineKeyboardMarkup(keyboard)
 
+def get_reply_keyboard():
+    # Ye hamesha neeche dikhne wala keyboard hai
+    reply_keyboard = [
+        [KeyboardButton("🛍️ Services Menu")],
+        [KeyboardButton("🆘 Help"), KeyboardButton("📞 Contact")]
+    ]
+    return ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True, is_persistent=True)
 
 # ---------------- Handlers ----------------
 
@@ -192,6 +181,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👇 <b>Neeche se category chunein:</b>"
     )
     await msg.edit_text(welcome, reply_markup=main_menu_keyboard(), parse_mode=ParseMode.HTML)
+    await update.message.reply_text("👆 Neeche diye gaye buttons se bhi navigate kar sakte hain.", reply_markup=get_reply_keyboard())
 
 
 async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -238,10 +228,18 @@ async def show_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("💳 Pay Now", callback_data="pay_now")],
         [InlineKeyboardButton("🔙 Main Menu", callback_data="back_main")],
     ]
+    
+    # Documents show karne ka logic
+    docs_text = ""
+    if svc.get("docs"):
+        docs_text = f"\n📄 <b>Zaroori Documents:</b>\n<code>{svc['docs']}</code>\n"
+
     text = (
         f"{svc['emoji']} <b>{svc['name']}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💰 <b>Price:</b> ₹{svc['price']}\n\n"
+        f"💰 <b>Price:</b> ₹{svc['price']}\n"
+        f"{docs_text}"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"💡 Payment karne ke liye <b>Pay Now</b> dabayein.\n"
         f"QR scan karke pay karein, phir screenshot bhejein."
     )
@@ -359,6 +357,12 @@ async def payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode=ParseMode.HTML,
     )
     context.user_data.pop("selected_service", None)
+    
+    # Payment ke baad wapas menu ka option
+    await update.message.reply_text(
+        "Kya aap koi aur service lena chahte hain? Neeche menu se select karein 👇",
+        reply_markup=main_menu_keyboard()
+    )
 
 
 async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -427,9 +431,45 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("selected_service", None)
     await update.message.reply_text(
-        "🔄 <b>Process cancel ho gayi.</b>\n\n/start se dobara shuru karein.",
+        "🔄 <b>Process cancel ho gayi.</b>\n\nNeeche menu se dobara shuru karein.",
+        reply_markup=main_menu_keyboard(),
         parse_mode=ParseMode.HTML,
     )
+
+
+# Naya text handler jo random messages aur persistent keyboard ko handle karega
+async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    user = update.effective_user
+    
+    if "Services Menu" in text:
+        total = sum(len(c["services"]) for c in CATEGORIES.values())
+        await update.message.reply_text(
+            f"🏪 <b>{PAYEE_NAME}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"✅ <b>{total}+</b> services available\n"
+            f"👇 <b>Category chunein:</b>",
+            reply_markup=main_menu_keyboard(),
+            parse_mode=ParseMode.HTML
+        )
+    elif "Help" in text:
+        await help_command(update, context)
+    elif "Contact" in text:
+        await update.message.reply_text(
+            f"📞 <b>Contact Us</b>\n\n"
+            f"🏪 <b>Cafe Name:</b> {PAYEE_NAME}\n"
+            f"🆔 <b>UPI ID:</b> <code>{UPI_ID}</code>\n\n"
+            f"Kisi bhi query ke liye message karein.",
+            parse_mode=ParseMode.HTML
+        )
+    else:
+        # Fallback for random messages
+        await update.message.reply_text(
+            f"Namaste {user.first_name}! Main aapki kya madad kar sakta hoon?\n\n"
+            f"Service lene ke liye neeche menu se select karein ya <b>🛍️ Services Menu</b> button dabayein.",
+            reply_markup=main_menu_keyboard(),
+            parse_mode=ParseMode.HTML
+        )
 
 
 def main():
@@ -437,12 +477,19 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
+    
     app.add_handler(CallbackQueryHandler(show_category, pattern="^cat_"))
     app.add_handler(CallbackQueryHandler(show_service, pattern="^svc_"))
     app.add_handler(CallbackQueryHandler(pay_now, pattern="^pay_now$"))
     app.add_handler(CallbackQueryHandler(back_main, pattern="^back_main$"))
     app.add_handler(CallbackQueryHandler(admin_action, pattern="^(approve|reject)_"))
+    
+    # Photo/Image Handler
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, payment_proof))
+    
+    # Text Handler (Commands ko chhod kar baaki sab text yahan aayega)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+    
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
