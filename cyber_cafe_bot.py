@@ -13,6 +13,7 @@ from telegram.ext import (
     MessageHandler, filters, ContextTypes
 )
 import qrcode
+from PIL import Image, ImageDraw, ImageFont
 
 try:
     from dotenv import load_dotenv
@@ -37,6 +38,47 @@ ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
 EFFECT_FIRE = "5104841245755180586"      # आतिशबाजी
 EFFECT_CONFETTI = "5046509860389126442"  # कॉन्फेटी (रंगीन कागज)
 EFFECT_HEART = "5159385139981059251"     # दिल
+EFFECT_STARS = "5104841245755180586"     # सितारे (Sparkles)
+
+# ------------------------------------------------------------
+# 🖼️ डायनामिक इमेज जेनरेटर (प्रीमियम ग्राफिक्स)
+# ------------------------------------------------------------
+def create_dynamic_banner(title, subtitle="Premium Service"):
+    try:
+        img = Image.new('RGB', (800, 400), color=(10, 15, 30)) # डार्क ब्लू बैकग्राउंड
+        draw = ImageDraw.Draw(img)
+        
+        # प्रीमियम लुक के लिए गोल्डन और ब्लू बॉर्डर
+        draw.rectangle([(0, 0), (800, 10)], fill=(255, 215, 0)) # गोल्डन टॉप
+        draw.rectangle([(0, 390), (800, 400)], fill=(255, 215, 0)) # गोल्डन बॉटम
+        draw.rectangle([(0, 0), (10, 400)], fill=(0, 150, 255)) # ब्लू लेफ्ट
+        draw.rectangle([(790, 0), (800, 400)], fill=(0, 150, 255)) # ब्लू राइट
+        
+        try:
+            font_large = ImageFont.truetype("arial.ttf", 60)
+            font_small = ImageFont.truetype("arial.ttf", 30)
+        except IOError:
+            font_large = ImageFont.load_default()
+            font_small = ImageFont.load_default()
+
+        # टाइटल सेंटर में
+        text_bbox = draw.textbbox((0, 0), title, font=font_large)
+        text_w = text_bbox[2] - text_bbox[0]
+        draw.text(((800 - text_w) / 2, 150), title, font=font_large, fill=(255, 255, 255))
+        
+        # सबटाइटल सेंटर में
+        sub_bbox = draw.textbbox((0, 0), subtitle, font=font_small)
+        sub_w = sub_bbox[2] - sub_bbox[0]
+        draw.text(((800 - sub_w) / 2, 230), subtitle, font=font_small, fill=(255, 215, 0))
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        buf.name = "banner.png"
+        return buf
+    except Exception as e:
+        logger.error(f"Banner generation failed: {e}")
+        return None
 
 # ------------------------------------------------------------
 # 🛠️ सर्विस और जरूरी कागजात की लिस्ट
@@ -187,36 +229,45 @@ def get_reply_keyboard():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
-    # 1. स्पिनिंग एनिमेशन (घूमता हुआ इमोजी)
     loading_msg = await update.message.reply_text("🕐 <b>बॉट शुरू हो रहा है...</b>", parse_mode=ParseMode.HTML)
-    await asyncio.sleep(0.4)
+    await asyncio.sleep(0.3)
     await loading_msg.edit_text("🕒 <b>सर्विस लोड हो रही हैं...</b>", parse_mode=ParseMode.HTML)
-    await asyncio.sleep(0.4)
-    await loading_msg.edit_text("🕕 <b>बस थोड़ा सा और इंतज़ार करें...</b>", parse_mode=ParseMode.HTML)
-    await asyncio.sleep(0.4)
+    await asyncio.sleep(0.3)
+    await loading_msg.edit_text("🕕 <b>प्रीमियम इंटरफ़ेस तैयार हो रहा है...</b>", parse_mode=ParseMode.HTML)
+    await asyncio.sleep(0.3)
     await loading_msg.edit_text("🕘 <b>तैयार है!</b>", parse_mode=ParseMode.HTML)
     await asyncio.sleep(0.2)
+    await loading_msg.delete()
 
     total = sum(len(c["services"]) for c in CATEGORIES.values())
-    welcome = (
-        f"🙏 <b>नमस्ते, {user.first_name}!</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+    
+    # डायनामिक इमेज जेनरेट करना वेलकम के लिए
+    banner = create_dynamic_banner(PAYEE_NAME, "Premium Digital Services")
+    welcome_text = (
+        f"🙏 <b>नमस्ते, {user.first_name}!</b>\n\n"
         f"🏪 <b>{PAYEE_NAME}</b> में आपका स्वागत है!\n\n"
-        f"🔹 <b>{total}+</b> सर्विसेज उपलब्ध हैं\n"
-        f"🔹 <b>UPI पेमेंट</b> — इंस्टेंट QR कोड\n"
-        f"🔹 <b>तेज़ और भरोसेमंद काम</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"✅ <b>{total}+</b> प्रीमियम सर्विसेज उपलब्ध हैं\n"
+        f"💳 <b>इंस्टेंट UPI पेमेंट</b> और तेज़ काम\n\n"
         f"👇 <b>नीचे से कोई कैटेगरी चुनें:</b>"
     )
     
-    # 2. वेलकम मैसेज के साथ कॉन्फेटी (Confetti) एनिमेशन
-    await loading_msg.edit_text(
-        welcome, 
-        reply_markup=main_menu_keyboard(), 
-        parse_mode=ParseMode.HTML,
-        message_effect_id=EFFECT_CONFETTI
-    )
-    await update.message.reply_text("💡 आप नीचे दिए गए बटन से भी मेनू खोल सकते हैं।", reply_markup=get_reply_keyboard())
+    if banner:
+        await update.message.reply_photo(
+            photo=banner,
+            caption=welcome_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=main_menu_keyboard(),
+            message_effect_id=EFFECT_CONFETTI
+        )
+    else:
+        await update.message.reply_text(
+            welcome_text, 
+            reply_markup=main_menu_keyboard(), 
+            parse_mode=ParseMode.HTML,
+            message_effect_id=EFFECT_CONFETTI
+        )
+        
+    await update.message.reply_text("💡 नीचे दिए गए बटन से भी मेनू खोल सकते हैं।", reply_markup=get_reply_keyboard())
 
 
 async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -228,7 +279,7 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ कैटेगरी नहीं मिली।")
         return
 
-    # 3. टाइपिंग एनिमेशन (Bot is typing...)
+    # टाइपिंग एनिमेशन
     await context.bot.send_chat_action(chat_id=query.message.chat_id, action=ChatAction.TYPING)
     await asyncio.sleep(0.4)
 
@@ -256,7 +307,20 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"ℹ️ <i>{cat['desc']}</i>\n\n"
         f"👇 <b>सर्विस चुनें:</b>"
     )
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    
+    # यहाँ हम स्पार्कल्स (Stars) एनिमेशन के साथ नया मैसेज भेज रहे हैं
+    try:
+        await query.message.delete()
+    except:
+        pass
+        
+    await context.bot.send_message(
+        chat_id=query.message.chat_id,
+        text=text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.HTML,
+        message_effect_id=EFFECT_STARS # सितारे का एनिमेशन
+    )
 
 
 async def show_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -286,7 +350,9 @@ async def show_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     docs_text = ""
     if svc.get("docs"):
-        docs_text = f"\n📄 <b>ज़रूरी जानकारी / कागजात:</b>\n<blockquote>{svc['docs']}</blockquote>\n"
+        # Expandable Blockquote और Spoiler का इस्तेमाल (Premium Look)
+        # स्पॉइलर से ऐसा लगेगा जैसे कोई हिडन टेक्स्ट है, जिसे क्लिक करने पर खुलेगा
+        docs_text = f"\n📄 <b>ज़रूरी जानकारी / कागजात:</b>\n<blockquote expandable><tg-spoiler>{svc['docs']}</tg-spoiler></blockquote>\n"
 
     text = (
         f"🛠️ <b>{svc['name']}</b>\n"
@@ -321,12 +387,10 @@ async def pay_now(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = query.message.chat_id
     msg_id = query.message.message_id
 
-    # 4. QR बनते समय एनिमेशन
     await query.edit_message_text("⚙️ <b>QR कोड बन रहा है...</b>", parse_mode=ParseMode.HTML)
     await asyncio.sleep(0.3)
     await query.edit_message_text("🖼️ <b>QR कोड बन रहा है....</b>", parse_mode=ParseMode.HTML)
     await asyncio.sleep(0.3)
-    # फोटो अपलोड एनिमेशन
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
 
     try:
@@ -336,7 +400,12 @@ async def pay_now(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"upi://pay?pa={quote(UPI_ID)}&pn={quote(PAYEE_NAME)}"
             f"&am={amount:.2f}&cu=INR&tn={quote(note)}"
         )
-        img = qrcode.make(upi_uri)
+        
+        qr = qrcode.QRCode(version=1, box_size=10, border=4)
+        qr.add_data(upi_uri)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="navy", back_color="white")
+        
         buf = io.BytesIO()
         img.save(buf, format="PNG")
         buf.seek(0)
@@ -348,16 +417,21 @@ async def pay_now(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
         caption = (
-            f"💳 <b>पेमेंट की जानकारी</b>\n"
+            f"💳 <b>सुरक्षित पेमेंट</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🛠️ <b>सर्विस:</b> {svc['name']}\n"
             f"💰 <b>कुल फीस:</b> ₹{amount}\n"
             f"🆔 <b>UPI ID:</b> <code>{UPI_ID}</code>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"📸 <b>QR स्कैन करके पेमेंट करें</b>\n\n"
-            f"📌 <b>ध्यान दें:</b> पेमेंट के बाद अपना <b>स्क्रीनशॉट</b> और अपने सभी <b>ज़रूरी कागजात (डॉक्यूमेंट्स)</b> यहीं इस चैट में भेज दें। ✅"
+            f"📌 <b>ध्यान दें:</b> पेमेंट के बाद अपना <b>स्क्रीनशॉट</b> और सभी <b>ज़रूरी कागजात</b> यहीं भेज दें।"
         )
-        await context.bot.send_photo(chat_id=chat_id, photo=buf, caption=caption, parse_mode=ParseMode.HTML)
+        await context.bot.send_photo(
+            chat_id=chat_id, 
+            photo=buf, 
+            caption=caption, 
+            parse_mode=ParseMode.HTML
+        )
     except Exception:
         logger.exception("QR error")
         await context.bot.send_message(
@@ -391,7 +465,7 @@ async def back_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         f"🏪 <b>{PAYEE_NAME}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🔹 <b>{total}+</b> सर्विसेज उपलब्ध हैं\n"
+        f"🔹 <b>{total}+</b> प्रीमियम सर्विसेज उपलब्ध हैं\n"
         f"🔹 <b>UPI पेमेंट</b> — इंस्टेंट QR कोड\n\n"
         f"👇 <b>कैटेगरी चुनें:</b>"
     )
@@ -420,7 +494,6 @@ async def payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]])
 
     try:
-        # एडमिन को आतिशबाजी (Fire) एनिमेशन के साथ अलर्ट भेजें
         await context.bot.send_message(
             chat_id=ADMIN_CHAT_ID, text=admin_text,
             reply_markup=admin_kb, parse_mode=ParseMode.HTML,
@@ -441,7 +514,7 @@ async def payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"⏳ एडमिन चेक करके आपको अपडेट देगा।\n"
         f"धन्यवाद! 🙏",
         parse_mode=ParseMode.HTML,
-        message_effect_id=EFFECT_HEART # कस्टमर को दिल (Heart) का एनिमेशन
+        message_effect_id=EFFECT_HEART
     )
     context.user_data.pop("selected_service", None)
     
@@ -462,7 +535,6 @@ async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if action == "approve":
         try:
-            # अप्रूवल के समय कस्टमर को कॉन्फेटी (Confetti) एनिमेशन
             await context.bot.send_message(
                 chat_id=uid,
                 text=(
