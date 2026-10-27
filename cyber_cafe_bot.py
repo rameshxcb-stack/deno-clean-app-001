@@ -63,13 +63,24 @@ CATEGORIES = {
             {"id": "aadhaar_ration", "name": "राशन कार्ड से आधार नंबर", "price": 400, "emoji": "🍚", "docs": "सिर्फ राशन कार्ड नंबर भेजें।\n(पूरे परिवार का मिलेगा, नाम राशन कार्ड में होना चाहिए और आखिरी 4 अंक पता हो)"}
         ]
     },
+    "exam": {
+        "name": "🎓 एग्जाम और एडमिट कार्ड",
+        "desc": "कॉलेज फॉर्म, सरकारी भर्ती फॉर्म, एडमिट कार्ड",
+        "services": [
+            {"id": "college_exam_form", "name": "कॉलेज/यूनिवर्सिटी एग्जाम फॉर्म", "price": 100, "emoji": "🏫", "docs": "यूनिवर्सिटी का नाम, रोल नंबर, रजिस्ट्रेशन नंबर, विषय, सेमेस्टर, फोटो, हस्ताक्षर, मोबाइल नंबर, ईमेल\n\n⚠️ <b>फीस का नियम:</b>\nयहाँ सिर्फ ₹100 (सर्विस चार्ज) का QR बनेगा।\nअसली एग्जाम फीस (जो यूनिवर्सिटी में जाएगी) आपको एडमिन बताएगा और वो आपको अलग से देनी होगी।"},
+            {"id": "college_admit_card", "name": "कॉलेज एडमिट कार्ड डाउनलोड", "price": 100, "emoji": "🪪", "docs": "यूनिवर्सिटी का नाम, रोल नंबर, रजिस्ट्रेशन नंबर, जन्मतिथि\n\n✅ <b>फीस:</b> ₹100 (फिक्स सर्विस चार्ज)"},
+            {"id": "govt_exam_form", "name": "सरकारी भर्ती एग्जाम फॉर्म (SSC/Railway)", "price": 100, "emoji": "🏛️", "docs": "10वीं/12वीं/ग्रेजुएशन मार्कशीट, आधार, फोटो, सिग्नेचर, कैटेगरी सर्टिफिकेट (अगर हो)\n\n⚠️ <b>फीस का नियम:</b>\nयहाँ सिर्फ ₹100 (सर्विस चार्ज) का QR बनेगा।\nअसली एप्लीकेशन फीस आपको एडमिन बताएगा और वो आपको अलग से देनी होगी।"},
+            {"id": "govt_admit_card", "name": "सरकारी कम्पटीशन एडमिट कार्ड", "price": 100, "emoji": "🖨️", "docs": "रजिस्ट्रेशन नंबर / रोल नंबर, जन्मतिथि, मोबाइल नंबर\n\n✅ <b>फीस:</b> ₹100 (फिक्स सर्विस चार्ज)"}
+        ]
+    },
     "tax": {
         "name": "💼 टैक्स और बिजनेस",
-        "desc": "ITR, GST, MSME, RC PDF",
+        "desc": "ITR, GST, MSME, फूड लाइसेंस, RC PDF",
         "services": [
             {"id": "itr_filing", "name": "ITR फाइलिंग (शुरुआती ₹1000)", "price": 1000, "emoji": "📊", "docs": "आधार, पैन, खाता नंबर, IFSC कोड, बैंक का नाम, मोबाइल, OTP\n\n💰 फीस:\n• ITR-1: ₹1000\n• ITR-2: ₹1500\n• ITR-3: ₹2000\n• ITR-4: ₹3000"},
             {"id": "gst_reg", "name": "GST रजिस्ट्रेशन (पेपर हों तो ₹2000)", "price": 2000, "emoji": "🧾", "docs": "आधार, पैन, फोटो, ईमेल, मोबाइल, बिजनेस का नाम/पता, बिजली बिल या रेंट एग्रीमेंट\n\n💰 फीस:\n• पेपर नहीं है तो: ₹3000\n• पेपर (रेंट/बिल) है तो: ₹2000\n⚡ केवल 1 घंटे में जीएसटी नंबर मिल जाएगा!"},
             {"id": "msme_reg", "name": "MSME / उद्यम रजिस्ट्रेशन", "price": 200, "emoji": "🏭", "docs": "आधार (दोनों साइड), पैन, बैंक अकाउंट नंबर व IFSC, आधार लिंक मोबाइल, ईमेल, फर्म का नाम और पता\n(समय: तुरंत)"},
+            {"id": "food_licence", "name": "फूड लाइसेंस (FSSAI)", "price": 500, "emoji": "🍽️", "docs": "आधार कार्ड, पैन कार्ड, फोटो, दुकान/बिजनेस का पता (किरायानामा या बिजली बिल), मोबाइल नंबर, ईमेल ID\n(ढाबा, रेस्टोरेंट, कैफे के लिए जरूरी)"},
             {"id": "rc_pdf", "name": "गाड़ी नंबर से RC PDF", "price": 100, "emoji": "🚗", "docs": "गाड़ी का नंबर भेजें"}
         ]
     },
@@ -196,15 +207,15 @@ async def show_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 मुख्य मेनू", callback_data="back_main")],
     ]
     
-    # डॉक्यूमेंट्स दिखाने का लॉजिक
+    # डॉक्यूमेंट्स दिखाने का लॉजिक (blockquote का इस्तेमाल किया है ताकि लंबा टेक्स्ट अच्छा दिखे)
     docs_text = ""
     if svc.get("docs"):
-        docs_text = f"\n📄 <b>ज़रूरी डॉक्यूमेंट्स:</b>\n<code>{svc['docs']}</code>\n"
+        docs_text = f"\n📄 <b>ज़रूरी जानकारी:</b>\n<blockquote>{svc['docs']}</blockquote>\n"
 
     text = (
         f"{svc['emoji']} <b>{svc['name']}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💰 <b>कीमत:</b> ₹{svc['price']}\n"
+        f"💰 <b>बेस चार्ज:</b> ₹{svc['price']}\n"
         f"{docs_text}"
         f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"💡 पेमेंट करने के लिए <b>अब पेमेंट करें</b> दबाएं।\n"
@@ -317,7 +328,7 @@ async def payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🆔 <b>यूजर ID:</b> <code>{user.id}</code>\n"
         f"📱 <b>यूजरनेम:</b> @{user.username or 'N/A'}\n"
         f"🛠️ <b>सर्विस:</b> {service_name}\n"
-        f"💰 <b>पैसे:</b> ₹{amount}\n"
+        f"💰 <b>बेस चार्ज:</b> ₹{amount}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━"
     )
     admin_kb = InlineKeyboardMarkup([[
@@ -341,7 +352,7 @@ async def payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ <b>स्क्रीनशॉट/डॉक्यूमेंट मिल गया है!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🛠️ <b>सर्विस:</b> {service_name}\n"
-        f"💰 <b>पैसे:</b> ₹{amount}\n\n"
+        f"💰 <b>बेस चार्ज:</b> ₹{amount}\n\n"
         f"⏳ एडमिन चेक करके आपको अपडेट देगा।\n"
         f"धन्यवाद! 🙏",
         parse_mode=ParseMode.HTML,
@@ -499,7 +510,7 @@ def main():
     app.add_handler(CallbackQueryHandler(show_category, pattern="^cat_"))
     app.add_handler(CallbackQueryHandler(show_service, pattern="^svc_"))
     app.add_handler(CallbackQueryHandler(pay_now, pattern="^pay_now$"))
-    app.add_handler(CallbackQueryHandler(ask_other_service, pattern="^other_service$")) # नया हैंडलर
+    app.add_handler(CallbackQueryHandler(ask_other_service, pattern="^other_service$"))
     app.add_handler(CallbackQueryHandler(back_main, pattern="^back_main$"))
     app.add_handler(CallbackQueryHandler(admin_action, pattern="^(approve|reject)_"))
     
