@@ -145,6 +145,14 @@ CATEGORIES = {
     }
 }
 
+# सर्विस आईडी से कैटेगरी आईडी पता करने का फंक्शन (बैक बटन के लिए)
+def get_category_id(service_id):
+    for cat_id, cat in CATEGORIES.items():
+        for svc in cat["services"]:
+            if svc["id"] == service_id:
+                return cat_id
+    return None
+
 def find_service(service_id):
     for cat in CATEGORIES.values():
         for svc in cat["services"]:
@@ -153,7 +161,6 @@ def find_service(service_id):
     return None
 
 def main_menu_keyboard():
-    # मुख्य मेनू के बटन (2 कॉलम)
     keyboard = [
         [InlineKeyboardButton("💳 पैन कार्ड", callback_data="cat_pan"), InlineKeyboardButton("🆔 आधार कार्ड", callback_data="cat_aadhaar")],
         [InlineKeyboardButton("🍚 राशन कार्ड", callback_data="cat_ration"), InlineKeyboardButton("📜 जाति/निवास/आय", callback_data="cat_certificates")],
@@ -212,15 +219,12 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = []
     services = cat["services"]
     
-    # 2-2 के जोड़े में बटन बनाने का लॉजिक (Landscape)
     for i in range(0, len(services), 2):
         row = []
-        # पहला बटन
         svc1 = services[i]
-        name1 = svc1.get("btn_name", svc1["name"]) # btn_name इस्तेमाल करें
+        name1 = svc1.get("btn_name", svc1["name"])
         row.append(InlineKeyboardButton(f"{svc1['emoji']} {name1}", callback_data=f"svc_{svc1['id']}"))
         
-        # दूसरा बटन (अगर मौजूद है)
         if i + 1 < len(services):
             svc2 = services[i+1]
             name2 = svc2.get("btn_name", svc2["name"])
@@ -228,7 +232,8 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         keyboard.append(row)
         
-    keyboard.append([InlineKeyboardButton("🔙 मुख्य मेनू", callback_data="back_main")])
+    # पीछे जाने का बटन (यहाँ से सीधे मेन मेनू जाएगा)
+    keyboard.append([InlineKeyboardButton("🔙 पीछे जाएं (मुख्य मेनू)", callback_data="back_main")])
 
     text = (
         f"📂 <b>{cat['name']}</b>\n"
@@ -250,18 +255,20 @@ async def show_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     context.user_data["selected_service"] = svc
     is_contact_admin = svc.get("contact_admin", False)
+    cat_id = get_category_id(svc_id) # कैटेगरी आईडी निकालें
 
-    if is_contact_admin:
-        keyboard = [
-            [InlineKeyboardButton("🔙 मुख्य मेनू", callback_data="back_main")],
-        ]
-        price_text = "एडमिन से पूछें"
-    else:
-        keyboard = [
-            [InlineKeyboardButton("💳 पेमेंट करें", callback_data="pay_now")],
-            [InlineKeyboardButton("🔙 मुख्य मेनू", callback_data="back_main")],
-        ]
-        price_text = f"₹{svc['price']}"
+    keyboard = []
+    if not is_contact_admin:
+        keyboard.append([InlineKeyboardButton("💳 पेमेंट करें", callback_data="pay_now")])
+    
+    # नेविगेशन बटन (पीछे और होम)
+    nav_row = []
+    if cat_id:
+        nav_row.append(InlineKeyboardButton("🔙 पीछे जाएं", callback_data=f"cat_{cat_id}"))
+    nav_row.append(InlineKeyboardButton("🏠 मुख्य मेनू", callback_data="back_main"))
+    keyboard.append(nav_row)
+
+    price_text = "एडमिन से पूछें" if is_contact_admin else f"₹{svc['price']}"
     
     docs_text = ""
     if svc.get("docs"):
@@ -352,7 +359,7 @@ async def ask_other_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👇 <b>कृपया अपना काम टाइप करके भेजें:</b>\n"
         "<i>(जैसे: 'मुझे एक वीडियो एडिट करवाना है' या 'मुझे कॉलेज का फॉर्म भरना है')</i>",
         parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 मुख्य मेनू", callback_data="back_main")]])
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 पीछे जाएं (मुख्य मेनू)", callback_data="back_main")]])
     )
 
 
