@@ -34,104 +34,113 @@ ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
 # ============================================================
 
 # ------------------------------------------------------------
-# 🛠️ सर्विस और जरूरी कागजात की लिस्ट (आसान भाषा में)
+# 🛠️ सर्विस और जरूरी कागजात की लिस्ट (2-लाइन बटन नाम के साथ)
 # ------------------------------------------------------------
 CATEGORIES = {
     "pan": {
         "name": "💳 पैन कार्ड का काम",
         "desc": "नया पैन, गलती सुधारना, पैन की जानकारी",
         "services": [
-            {"id": "pan_new_aadhaar", "name": "नया पैन कार्ड (सिर्फ आधार से)", "price": 200, "emoji": "💳", "docs": "📄 आधार कार्ड\n🖼️ एक फोटो\n✍️ हस्ताक्षर (साइन)\n📱 मोबाइल नंबर\n📧 ईमेल (अगर है तो)\n\n⚠️ <i>आधार कार्ड में मोबाइल नंबर जुड़ा होना चाहिए, OTP आएगा।</i>"},
-            {"id": "pan_new_metric", "name": "नया पैन कार्ड (मार्कशीट/जन्म प्रमाण से)", "price": 200, "emoji": "🎓", "docs": "📄 आधार कार्ड\n🖼️ एक फोटो\n✍️ हस्ताक्षर (साइन)\n📱 मोबाइल नंबर\n📧 ईमेल (अगर है तो)\n\n✅ <i>इसमें आधार का OTP नहीं लगेगा, सीधे बन जाएगा।</i>"},
-            {"id": "pan_correct_name", "name": "पैन में पूरा नाम या पिता का नाम बदलना", "price": 1500, "emoji": "✏️", "docs": "📄 आधार कार्ड\n💳 पुराना पैन कार्ड\n🖼️ फोटो, साइन, मोबाइल, ईमेल\n📜 जन्म प्रमाण पत्र या मार्कशीट\n\n⚠️ <i>आधार का OTP जरूरी है।</i>"},
-            {"id": "pan_correct_other", "name": "पैन में छोटी गलती सुधारना (जैसे पता, फोन)", "price": 250, "emoji": "📝", "docs": "📄 आधार कार्ड\n💳 पुराना पैन कार्ड\n🖼️ फोटो, साइन, मोबाइल, ईमेल\n\n⚠️ <i>आधार का OTP जरूरी है।</i>"},
-            {"id": "pan_single_letter", "name": "सिंगल लेटर वाला पैन (जैसे P Sonu)", "price": 1500, "emoji": "🔠", "docs": "📄 आधार की PDF\n🖼️ फोटो\n📱 मोबाइल, ईमेल\n✍️ हस्ताक्षर (या अंगूठा)\n👨‍🦳 पिता का नाम\n\n<i>(आधार में मोबाइल जुड़ा हो तो OTP आएगा)</i>"},
-            {"id": "pan_business", "name": "दुकान/कंपनी के लिए बिजनेस पैन", "price": 2000, "emoji": "🏢", "docs": "🏪 दुकान का नाम\n📅 खुलने की तारीख\n📍 पूरा पता\n📱 मोबाइल और 📧 ईमेल\n🪪 मालिक का आधार और पैन\n\n⏳ <i>समय: 7 से 10 दिन</i>"},
-            {"id": "pan_lost", "name": "पैन कार्ड खो गया है (नंबर पता करना)", "price": 100, "emoji": "🔍", "docs": "📄 आधार कार्ड नंबर\n\n⚡ <i>2 मिनट में पैन नंबर मिल जाएगा।</i>"},
-            {"id": "pan_details", "name": "पैन कार्ड की पूरी जानकारी निकलवाना", "price": 100, "emoji": "ℹ️", "docs": "💳 पैन कार्ड नंबर\n<i>(नंबर है लेकिन डिटेल याद नहीं है तो)</i>"},
-            {"id": "pan_find_mobile", "name": "मोबाइल नंबर से पैन कार्ड खोजना", "price": 150, "emoji": "📱", "docs": "📱 मोबाइल नंबर\n<i>(मोबाइल याद है, पैन नहीं)</i>"},
-            {"id": "pan_find_aadhaar", "name": "पैन कार्ड से आधार नंबर खोजना", "price": 350, "emoji": "🆔", "docs": "💳 पैन कार्ड नंबर\n<i>(पैन है, आधार नंबर याद नहीं है)</i>"}
+            {"id": "pan_new_aadhaar", "name": "नया पैन (सिर्फ आधार से)", "btn_name": "नया पैन\n(सिर्फ आधार से)", "price": 200, "emoji": "💳", "docs": "📄 आधार कार्ड\n🖼️ फोटो\n✍️ हस्ताक्षर (साइन)\n📱 मोबाइल नंबर\n📧 ईमेल (अगर है तो)\n\n⚠️ <i>आधार में मोबाइल लिंक होना जरूरी है, OTP आएगा।</i>"},
+            {"id": "pan_new_metric", "name": "नया पैन (मार्कशीट/जन्म प्रमाण से)", "btn_name": "नया पैन\n(जन्म प्रमाण से)", "price": 200, "emoji": "🎓", "docs": "📄 आधार कार्ड\n🖼️ फोटो\n✍️ हस्ताक्षर (साइन)\n📱 मोबाइल नंबर\n📧 ईमेल (अगर है तो)\n\n✅ <i>इसमें आधार का OTP नहीं लगेगा।</i>"},
+            {"id": "pan_correct_name", "name": "पैन में नाम/पिता का नाम बदलना", "btn_name": "नाम/पिता का नाम\nबदलना", "price": 1500, "emoji": "✏️", "docs": "📄 आधार कार्ड\n💳 पुराना पैन कार्ड\n🖼️ फोटो, साइन, मोबाइल, ईमेल\n📜 जन्म प्रमाण पत्र या मार्कशीट\n\n⚠️ <i>आधार OTP जरूरी है।</i>"},
+            {"id": "pan_correct_other", "name": "पैन में छोटी गलती सुधारना", "btn_name": "छोटी गलती\nसुधारना", "price": 250, "emoji": "📝", "docs": "📄 आधार कार्ड\n💳 पुराना पैन कार्ड\n🖼️ फोटो, साइन, मोबाइल, ईमेल\n\n⚠️ <i>आधार OTP जरूरी है।</i>"},
+            {"id": "pan_single_letter", "name": "सिंगल लेटर वाला पैन (जैसे P Sonu)", "btn_name": "सिंगल लेटर पैन\n(जैसे P Sonu)", "price": 1500, "emoji": "🔠", "docs": "📄 आधार PDF\n🖼️ फोटो\n📱 मोबाइल, ईमेल\n✍️ हस्ताक्षर (या अंगूठा)\n👨‍🦳 पिता का नाम"},
+            {"id": "pan_business", "name": "बिजनेस पैन कार्ड", "btn_name": "बिजनेस पैन\nकार्ड", "price": 2000, "emoji": "🏢", "docs": "🏪 दुकान का नाम\n📅 खुलने की तारीख\n📍 पूरा पता\n📱 मोबाइल और 📧 ईमेल\n🪪 मालिक का आधार और पैन\n\n⏳ <i>समय: 7 से 10 दिन</i>"},
+            {"id": "pan_lost", "name": "पैन कार्ड खो गया है (नंबर पता करना)", "btn_name": "पैन खो गया है\n(नंबर पता करें)", "price": 100, "emoji": "🔍", "docs": "📄 आधार कार्ड नंबर\n\n⚡ <i>2 मिनट में पैन नंबर मिल जाएगा।</i>"},
+            {"id": "pan_details", "name": "पैन कार्ड की पूरी जानकारी", "btn_name": "पैन की पूरी\nजानकारी", "price": 100, "emoji": "ℹ️", "docs": "💳 पैन कार्ड नंबर"},
+            {"id": "pan_find_mobile", "name": "मोबाइल नंबर से पैन खोजना", "btn_name": "मोबाइल से पैन\nखोजना", "price": 150, "emoji": "📱", "docs": "📱 मोबाइल नंबर"},
+            {"id": "pan_find_aadhaar", "name": "पैन से आधार नंबर खोजना", "btn_name": "पैन से आधार\nखोजना", "price": 350, "emoji": "🆔", "docs": "💳 पैन कार्ड नंबर"}
         ]
     },
     "aadhaar": {
         "name": "🆔 आधार कार्ड का काम",
         "desc": "पता बदलना, पिता का नाम, LMS सर्टिफिकेट",
         "services": [
-            {"id": "aadhaar_address", "name": "आधार में पता बदलवाना", "price": 300, "emoji": "🏠", "docs": "आधार का OTP लगेगा। नया पता अंग्रेजी या हिंदी में भेजें:\nगाँव, डाकघर, थाना, जिला, राज्य, पिन कोड।\n\n✅ <i>गारंटी के साथ - अगर पता अपडेट नहीं हुआ तो पैसे वापस या फ्री में दोबारा करेंगे।</i>"},
-            {"id": "aadhaar_father", "name": "आधार में पिता का नाम बदलवाना", "price": 250, "emoji": "👨‍🦳", "docs": "पिता के आधार में मोबाइल जुड़ा हो + आपके आधार में भी। दोनों पर OTP आएगा।\n\n⚠️ <i>पिता के आधार में जो नाम होगा, वही आपके आधार में आएगा।</i>"},
-            {"id": "aadhaar_lms", "name": "आधार LMS सर्टिफिकेट बनवाना", "price": 1500, "emoji": "📄", "docs": "🖊️ नाम, 📱 मोबाइल नंबर, 📧 ईमेल ID, 🌍 राज्य, 🏙️ जिला, 🆔 आधार नंबर"},
-            {"id": "aadhaar_ration", "name": "राशन कार्ड से पूरे परिवार का आधार नंबर", "price": 400, "emoji": "🍚", "docs": "सिर्फ राशन कार्ड नंबर भेजें।\n\n⚠️ <i>परिवार के सदस्य का नाम राशन कार्ड में होना चाहिए और आखिरी 4 अंक पता होना चाहिए।</i>"}
+            {"id": "aadhaar_address", "name": "आधार में पता बदलवाना", "btn_name": "आधार में पता\nबदलवाना", "price": 300, "emoji": "🏠", "docs": "आधार का OTP लगेगा। नया पता अंग्रेजी या हिंदी में भेजें:\nगाँव, डाकघर, थाना, जिला, राज्य, पिन कोड।\n\n✅ <i>गारंटी के साथ - पता अपडेट नहीं हुआ तो पैसे वापस या फ्री में दोबारा।</i>"},
+            {"id": "aadhaar_father", "name": "आधार में पिता का नाम बदलवाना", "btn_name": "पिता का नाम\nबदलवाना", "price": 250, "emoji": "👨‍🦳", "docs": "पिता के आधार में मोबाइल जुड़ा हो + आपके आधार में भी। दोनों पर OTP आएगा।\n\n⚠️ <i>पिता के आधार वाला नाम ही आपके आधार में आएगा।</i>"},
+            {"id": "aadhaar_lms", "name": "आधार LMS सर्टिफिकेट", "btn_name": "LMS सर्टिफिकेट\nबनवाना", "price": 1500, "emoji": "📄", "docs": "🖊️ नाम, 📱 मोबाइल नंबर, 📧 ईमेल ID, 🌍 राज्य, 🏙️ जिला, 🆔 आधार नंबर"},
+            {"id": "aadhaar_ration", "name": "राशन कार्ड से परिवार का आधार नंबर", "btn_name": "राशन से परिवार\nका आधार नंबर", "price": 400, "emoji": "🍚", "docs": "सिर्फ राशन कार्ड नंबर भेजें।\n\n⚠️ <i>नाम राशन कार्ड में होना चाहिए और आखिरी 4 अंक पता होना चाहिए।</i>"}
         ]
     },
     "ration": {
         "name": "🍚 राशन कार्ड का काम",
         "desc": "नया कार्ड, सदस्य जोड़ना, दूसरे काम",
         "services": [
-            {"id": "ration_new", "name": "नया राशन कार्ड बनवाना", "price": 200, "emoji": "🆕", "docs": "📄 सभी सदस्यों का आधार कार्ड (उम्र 5 साल से ज्यादा हो)\n📄 जाति प्रमाण पत्र (अगर SC/ST में हैं तो)\n📱 मोबाइल नंबर (आधार से जुड़ा हो, OTP आएगा)\n🏦 बैंक पासबुक (अगर है तो)\n🏠 घर की फोटो"},
-            {"id": "ration_add_member", "name": "राशन कार्ड में नया सदस्य जोड़ना", "price": 100, "emoji": "➕", "docs": "📄 पुराना राशन कार्ड\n📄 जिसे जोड़ना है उसका आधार कार्ड\n📄 परिवार के मुखिया का आधार कार्ड (मोबाइल नंबर जुड़ा होना चाहिए, OTP आएगा)"},
-            {"id": "ration_other", "name": "राशन कार्ड का दूसरा कोई काम", "price": 0, "emoji": "⚙️", "docs": "राशन कार्ड से जुड़े दूसरे कामों के लिए कृपया एडमिन से संपर्क करें।", "contact_admin": True}
+            {"id": "ration_new", "name": "नया राशन कार्ड बनवाना", "btn_name": "नया राशन कार्ड\nबनवाना", "price": 200, "emoji": "🆕", "docs": "📄 सभी सदस्यों का आधार (उम्र 5 साल से ज्यादा)\n📄 जाति प्रमाण पत्र (अगर SC/ST हैं तो)\n📱 मोबाइल नंबर (आधार से जुड़ा हो)\n🏦 बैंक पासबुक (अगर है तो)\n🏠 घर की फोटो"},
+            {"id": "ration_add_member", "name": "राशन कार्ड में नया सदस्य जोड़ना", "btn_name": "नया सदस्य\nजोड़ना", "price": 100, "emoji": "➕", "docs": "📄 पुराना राशन कार्ड\n📄 नए सदस्य का आधार कार्ड\n📄 मुखिया का आधार कार्ड (मोबाइल लिंक हो, OTP आएगा)"},
+            {"id": "ration_other", "name": "राशन कार्ड का दूसरा काम", "btn_name": "दूसरा काम\n(एडमिन से पूछें)", "price": 0, "emoji": "⚙️", "docs": "राशन कार्ड से जुड़े दूसरे कामों के लिए कृपया एडमिन से संपर्क करें।", "contact_admin": True}
         ]
     },
     "certificates": {
         "name": "📜 जाति, निवास और आय प्रमाण पत्र",
         "desc": "जाति, निवास, आय और NCL सर्टिफिकेट",
         "services": [
-            {"id": "caste_cert", "name": "जाति प्रमाण पत्र बनवाना", "price": 150, "emoji": "📜", "docs": "📄 आधार कार्ड\n📄 खतियान\n📄 रसीद\n📝 फॉर्म (एडमिन से लें, मुखिया का साइन जरूरी है)\n\n⚠️ <i>अगर लड़की की शादी हो गई है, तो उसका जाति प्रमाण पत्र उसके पापा के घर के कागजों से बनेगा।</i>"},
-            {"id": "resident_cert", "name": "निवास प्रमाण पत्र बनवाना", "price": 150, "emoji": "🏠", "docs": "📄 आधार कार्ड\n📄 खतियान\n📄 रसीद\n📝 फॉर्म (एडमिन से लें, मुखिया का साइन जरूरी है)\n\n⚠️ <i>अगर लड़की की शादी हो गई है, तो उसका निवास प्रमाण पत्र उसके पति के घर के कागजों से बनेगा।</i>"},
-            {"id": "income_cert", "name": "आय प्रमाण पत्र बनवाना", "price": 150, "emoji": "💰", "docs": "📄 आधार कार्ड\n📄 रसीद (अगर है तो)\n📄 शपथ पत्र (Affidavit)\n📝 फॉर्म (एडमिन से लें, मुखिया का साइन जरूरी है)\n\n⚠️ <i>अगर लड़की की शादी हो गई है, तो उसका आय प्रमाण पत्र उसके पति के घर के कागजों से बनेगा।</i>"},
-            {"id": "ncl_cert", "name": "NCL सर्टिफिकेट (नॉन-क्रीमी लेयर)", "price": 0, "emoji": "📑", "docs": "NCL सर्टिफिकेट बनवाने के लिए कृपया एडमिन से संपर्क करें।", "contact_admin": True}
+            {"id": "caste_cert", "name": "जाति प्रमाण पत्र", "btn_name": "जाति प्रमाण\nपत्र", "price": 150, "emoji": "📜", "docs": "📄 आधार कार्ड\n📄 खतियान\n📄 रसीद\n📝 फॉर्म (एडमिन से लें, मुखिया का साइन जरूरी है)\n\n⚠️ <i>लड़की की शादी हो गई है, तो उसका जाति प्रमाण पत्र उसके पापा के घर के कागजों से बनेगा।</i>"},
+            {"id": "resident_cert", "name": "निवास प्रमाण पत्र", "btn_name": "निवास प्रमाण\nपत्र", "price": 150, "emoji": "🏠", "docs": "📄 आधार कार्ड\n📄 खतियान\n📄 रसीद\n📝 फॉर्म (एडमिन से लें, मुखिया का साइन जरूरी है)\n\n⚠️ <i>लड़की की शादी हो गई है, तो उसका निवास प्रमाण पत्र उसके पति के घर के कागजों से बनेगा।</i>"},
+            {"id": "income_cert", "name": "आय प्रमाण पत्र", "btn_name": "आय प्रमाण\nपत्र", "price": 150, "emoji": "💰", "docs": "📄 आधार कार्ड\n📄 रसीद (अगर है तो)\n📄 शपथ पत्र (Affidavit)\n📝 फॉर्म (एडमिन से लें, मुखिया का साइन जरूरी है)"},
+            {"id": "ncl_cert", "name": "NCL सर्टिफिकेट", "btn_name": "NCL सर्टिफिकेट\n(एडमिन से पूछें)", "price": 0, "emoji": "📑", "docs": "NCL सर्टिफिकेट बनवाने के लिए कृपया एडमिन से संपर्क करें।", "contact_admin": True}
         ]
     },
     "voter": {
         "name": "🗳️ वोटर आईडी का काम",
         "desc": "नया कार्ड, गलती सुधारना, पीडीएफ और मोबाइल जोड़ना",
         "services": [
-            {"id": "voter_new_card", "name": "नया वोटर आईडी कार्ड बनवाना", "price": 100, "emoji": "🆕", "docs": "📄 आधार कार्ड\n📱 मोबाइल नंबर\n🖼️ फोटो\n📄 मम्मी-पापा या पति/पत्नी में से किसी एक का वोटर कार्ड\n\n⚠️ <i>ध्यान दें: आपके आधार कार्ड में मोबाइल नंबर जुड़ा होना जरूरी है</i>"},
-            {"id": "voter_correction", "name": "वोटर कार्ड में गलती सुधारना (नाम/पता)", "price": 100, "emoji": "✏️", "docs": "📄 आधार कार्ड\n📱 मोबाइल नंबर\n🖼️ फोटो\n\n⚠️ <i>ध्यान दें: आपके आधार कार्ड में मोबाइल नंबर जुड़ा होना जरूरी है</i>"},
-            {"id": "voter_other", "name": "वोटर कार्ड की पीडीएफ, नाम सुधार और मोबाइल जोड़ना", "price": 150, "emoji": "⚙️", "docs": "✅ आधार और वोटर कार्ड में नाम अलग-अलग है तो उसे एक जैसा करवाना\n✅ वोटर कार्ड की पीडीएफ (PDF) डाउनलोड करके देना\n✅ वोटर कार्ड में मोबाइल नंबर जोड़ना (अगर जुड़ नहीं रहा है तो)"}
+            {"id": "voter_new_card", "name": "नया वोटर आईडी कार्ड", "btn_name": "नया वोटर\nआईडी कार्ड", "price": 100, "emoji": "🆕", "docs": "📄 आधार कार्ड\n📱 मोबाइल नंबर\n🖼️ फोटो\n📄 मम्मी-पापा या पति/पत्नी का वोटर कार्ड\n\n⚠️ <i>आधार में मोबाइल नंबर जुड़ा होना जरूरी है।</i>"},
+            {"id": "voter_correction", "name": "वोटर कार्ड में गलती सुधारना", "btn_name": "गलती\nसुधारना", "price": 100, "emoji": "✏️", "docs": "📄 आधार कार्ड\n📱 मोबाइल नंबर\n🖼️ फोटो\n\n⚠️ <i>आधार में मोबाइल नंबर जुड़ा होना जरूरी है।</i>"},
+            {"id": "voter_other", "name": "पीडीएफ, नाम सुधार और मोबाइल जोड़ना", "btn_name": "PDF और नाम\nसुधारना", "price": 150, "emoji": "⚙️", "docs": "✅ आधार और वोटर कार्ड में नाम अलग-अलग है तो उसे एक जैसा करवाना\n✅ वोटर कार्ड की पीडीएफ डाउनलोड करके देना\n✅ वोटर कार्ड में मोबाइल नंबर जोड़ना"}
         ]
     },
     "exam": {
         "name": "🎓 फॉर्म और एडमिट कार्ड",
-        "desc": "कॉलेज फॉर्म, सरकारी नौकरी फॉर्म, एडमिट कार्ड",
+        "desc": "कॉलेज फॉर्म, सरकारी भर्ती फॉर्म, एडमिट कार्ड",
         "services": [
-            {"id": "college_exam_form", "name": "कॉलेज/यूनिवर्सिटी का एग्जाम फॉर्म", "price": 100, "emoji": "🏫", "docs": "यूनिवर्सिटी का नाम, रोल नंबर, रजिस्ट्रेशन नंबर, विषय, सेमेस्टर, फोटो, साइन, मोबाइल, ईमेल\n\n⚠️ <b>ध्यान दें:</b>\nयहाँ सिर्फ ₹100 (सर्विस चार्ज) का QR बनेगा।\nअसली एग्जाम फीस (जो कॉलेज में जाएगी) आपको एडमिन बताएगा और वो आपको अलग से देनी होगी।"},
-            {"id": "college_admit_card", "name": "कॉलेज का एडमिट कार्ड डाउनलोड करना", "price": 100, "emoji": "🪪", "docs": "यूनिवर्सिटी का नाम, रोल नंबर, रजिस्ट्रेशन नंबर, जन्मतिथि\n\n✅ <b>फीस:</b> ₹100 (सिर्फ काम का चार्ज)"},
-            {"id": "govt_exam_form", "name": "सरकारी नौकरी का फॉर्म (SSC/रेलवे)", "price": 100, "emoji": "🏛️", "docs": "10वीं/12वीं/ग्रेजुएशन की मार्कशीट, आधार, फोटो, साइन, जाति सर्टिफिकेट (अगर हो)\n\n⚠️ <b>ध्यान दें:</b>\nयहां सिर्फ ₹100 (सर्विस चार्ज) का QR बनेगा।\nअसली फॉर्म की फीस आपको एडमिन बताएगा और वो आपको अलग से देनी होगी।"},
-            {"id": "govt_admit_card", "name": "सरकारी नौकरी का एडमिट कार्ड डाउनलोड", "price": 100, "emoji": "🖨️", "docs": "रजिस्ट्रेशन नंबर / रोल नंबर, जन्मतिथि, मोबाइल नंबर\n\n✅ <b>फीस:</b> ₹100 (सिर्फ काम का चार्ज)"}
+            {"id": "college_exam_form", "name": "कॉलेज/यूनिवर्सिटी एग्जाम फॉर्म", "btn_name": "कॉलेज एग्जाम\nफॉर्म", "price": 100, "emoji": "🏫", "docs": "यूनिवर्सिटी का नाम, रोल नंबर, रजिस्ट्रेशन नंबर, विषय, सेमेस्टर, फोटो, साइन, मोबाइल, ईमेल\n\n⚠️ <b>ध्यान दें:</b> यहाँ सिर्फ ₹100 (सर्विस चार्ज) का QR बनेगा। असली एग्जाम फीस आपको एडमिन बताएगा।"},
+            {"id": "college_admit_card", "name": "कॉलेज एडमिट कार्ड डाउनलोड", "btn_name": "कॉलेज एडमिट\nकार्ड", "price": 100, "emoji": "🪪", "docs": "यूनिवर्सिटी का नाम, रोल नंबर, रजिस्ट्रेशन नंबर, जन्मतिथि\n\n✅ <b>फीस:</b> ₹100 (सिर्फ काम का चार्ज)"},
+            {"id": "govt_exam_form", "name": "सरकारी नौकरी का फॉर्म (SSC/रेलवे)", "btn_name": "सरकारी नौकरी\nफॉर्म", "price": 100, "emoji": "🏛️", "docs": "10वीं/12वीं/ग्रेजुएशन मार्कशीट, आधार, फोटो, साइन, जाति सर्टिफिकेट (अगर हो)\n\n⚠️ <b>ध्यान दें:</b> यहां सिर्फ ₹100 (सर्विस चार्ज) का QR बनेगा। असली फॉर्म की फीस अलग से देनी होगी।"},
+            {"id": "govt_admit_card", "name": "सरकारी नौकरी का एडमिट कार्ड", "btn_name": "सरकारी एडमिट\nकार्ड", "price": 100, "emoji": "🖨️", "docs": "रजिस्ट्रेशन नंबर / रोल नंबर, जन्मतिथि, मोबाइल नंबर\n\n✅ <b>फीस:</b> ₹100 (सिर्फ काम का चार्ज)"}
         ]
     },
     "tax": {
         "name": "💼 टैक्स और बिजनेस का काम",
         "desc": "इनकम टैक्स, GST, MSME, फूड लाइसेंस",
         "services": [
-            {"id": "itr_filing", "name": "इनकम टैक्स रिटर्न (ITR) फाइल करना", "price": 1000, "emoji": "📊", "docs": "आधार, पैन, बैंक खाता नंबर, IFSC कोड, बैंक का नाम, मोबाइल, OTP\n\n💰 <b>फीस:</b>\n• ITR-1: ₹1000\n• ITR-2: ₹1500\n• ITR-3: ₹2000\n• ITR-4: ₹3000"},
-            {"id": "gst_reg", "name": "GST नंबर बनवाना (दुकान के लिए)", "price": 2000, "emoji": "🧾", "docs": "आधार, पैन, फोटो, ईमेल, मोबाइल, दुकान का नाम/पता, बिजली बिल या रेंट एग्रीमेंट\n\n💰 <b>फीस:</b>\n• कागज नहीं है तो: ₹3000\n• कागज (रेंट/बिल) है तो: ₹2000\n⚡ केवल 1 घंटे में GST नंबर मिल जाएगा!"},
-            {"id": "msme_reg", "name": "MSME (उद्यम) रजिस्ट्रेशन करना", "price": 200, "emoji": "🏭", "docs": "आधार (दोनों तरफ), पैन, बैंक अकाउंट नंबर व IFSC, आधार से जुड़ा मोबाइल, ईमेल, फर्म का नाम और पता\n\n⏳ <i>समय: तुरंत</i>"},
-            {"id": "food_licence", "name": "फूड लाइसेंस (FSSAI) बनवाना", "price": 500, "emoji": "🍽️", "docs": "आधार कार्ड, पैन कार्ड, फोटो, दुकान का पता (रेंट या बिजली बिल), मोबाइल नंबर, ईमेल ID\n\n<i>(ढाबा, रेस्टोरेंट, कैफे चलाने के लिए जरूरी है)</i>"},
-            {"id": "rc_pdf", "name": "गाड़ी के नंबर से RC (कागज) डाउनलोड करना", "price": 100, "emoji": "🚗", "docs": "गाड़ी का नंबर भेजें"}
+            {"id": "itr_filing", "name": "इनकम टैक्स रिटर्न (ITR) फाइल करना", "btn_name": "ITR फाइल\nकरना", "price": 1000, "emoji": "📊", "docs": "आधार, पैन, बैंक खाता नंबर, IFSC कोड, बैंक का नाम, मोबाइल, OTP\n\n💰 <b>फीस:</b> ITR-1: ₹1000, ITR-2: ₹1500, ITR-3: ₹2000, ITR-4: ₹3000"},
+            {"id": "gst_reg", "name": "GST नंबर बनवाना", "btn_name": "GST नंबर\nबनवाना", "price": 2000, "emoji": "🧾", "docs": "आधार, पैन, फोटो, ईमेल, मोबाइल, दुकान का नाम/पता, बिजली बिल या रेंट एग्रीमेंट\n\n💰 <b>फीस:</b> कागज नहीं है तो: ₹3000, कागज है तो: ₹2000"},
+            {"id": "msme_reg", "name": "MSME (उद्यम) रजिस्ट्रेशन", "btn_name": "MSME\nरजिस्ट्रेशन", "price": 200, "emoji": "🏭", "docs": "आधार (दोनों तरफ), पैन, बैंक अकाउंट नंबर व IFSC, मोबाइल, ईमेल, फर्म का नाम और पता"},
+            {"id": "food_licence", "name": "फूड लाइसेंस (FSSAI)", "btn_name": "फूड लाइसेंस\n(FSSAI)", "price": 500, "emoji": "🍽️", "docs": "आधार कार्ड, पैन कार्ड, फोटो, दुकान का पता (रेंट या बिजली बिल), मोबाइल नंबर, ईमेल ID"},
+            {"id": "rc_pdf", "name": "गाड़ी के नंबर से RC (कागज)", "btn_name": "गाड़ी का RC\nडाउनलोड", "price": 100, "emoji": "🚗", "docs": "गाड़ी का नंबर भेजें"}
         ]
     },
     "print": {
         "name": "🖨️ प्रिंट और फोटोकॉपी",
         "desc": "रंगीन/ब्लैक एंड व्हाइट प्रिंट, स्कैन",
         "services": [
-            {"id": "print_bw",       "name": "ब्लैक एंड व्हाइट प्रिंट (1 पेज)", "price": 2,   "emoji": "📄", "docs": "PDF, वर्ड फाइल या फोटो"},
-            {"id": "print_color",    "name": "रंगीन प्रिंट (1 पेज)",           "price": 10,  "emoji": "🌈", "docs": "PDF, वर्ड फाइल या फोटो"},
-            {"id": "photocopy",      "name": "फोटोकॉपी (1 पेज)",               "price": 1,   "emoji": "📑", "docs": "ओरिजिनल कागज"},
-            {"id": "scan",           "name": "स्कैनिंग (1 पेज)",               "price": 5,   "emoji": "📷", "docs": "ओरिजिनल कागज"},
-            {"id": "lam_a4",         "name": "लेमिनेशन A4 (कागज को प्लास्टिक में लपेटना)", "price": 30,  "emoji": "🪪", "docs": "A4 साइज का कागज"},
-            {"id": "passport_photo", "name": "पासपोर्ट साइज फोटो (8 कॉपी)",    "price": 50,  "emoji": "👤", "docs": "कुछ नहीं चाहिए, बस कैफे आ जाएं"}
+            {"id": "print_bw",       "name": "ब्लैक एंड व्हाइट प्रिंट (1 पेज)", "btn_name": "B&W प्रिंट\n(1 पेज)", "price": 2,   "emoji": "📄", "docs": "PDF, वर्ड फाइल या फोटो"},
+            {"id": "print_color",    "name": "रंगीन प्रिंट (1 पेज)",           "btn_name": "रंगीन प्रिंट\n(1 पेज)", "price": 10,  "emoji": "🌈", "docs": "PDF, वर्ड फाइल या फोटो"},
+            {"id": "photocopy",      "name": "फोटोकॉपी (1 पेज)",               "btn_name": "फोटोकॉपी\n(1 पेज)", "price": 1,   "emoji": "📑", "docs": "ओरिजिनल कागज"},
+            {"id": "scan",           "name": "स्कैनिंग (1 पेज)",               "btn_name": "स्कैनिंग\n(1 पेज)", "price": 5,   "emoji": "📷", "docs": "ओरिजिनल कागज"},
+            {"id": "lam_a4",         "name": "लेमिनेशन A4",                    "btn_name": "लेमिनेशन\nA4", "price": 30,  "emoji": "🪪", "docs": "A4 साइज का कागज"},
+            {"id": "passport_photo", "name": "पासपोर्ट साइज फोटो (8 कॉपी)",    "btn_name": "पासपोर्ट फोटो\n(8 कॉपी)", "price": 50,  "emoji": "👤", "docs": "कुछ नहीं चाहिए, बस कैफे आ जाएं"}
+        ]
+    },
+    "csc": {
+        "name": "💻 CSC के काम",
+        "desc": "CSC ID, TEC रजिस्ट्रेशन और एग्जाम",
+        "services": [
+            {"id": "csc_id_approval", "name": "CSC ID अप्रूवल", "btn_name": "CSC ID\nअप्रूवल", "price": 0, "emoji": "✅", "docs": "CSC ID अप्रूवल के लिए कृपया एडमिन से संपर्क करें।", "contact_admin": True},
+            {"id": "csc_id_password", "name": "CSC ID पासवर्ड", "btn_name": "CSC ID\nपासवर्ड", "price": 0, "emoji": "🔑", "docs": "CSC ID पासवर्ड के लिए कृपया एडमिन से संपर्क करें।", "contact_admin": True},
+            {"id": "csc_tec_reg", "name": "CSC TEC रजिस्ट्रेशन", "btn_name": "TEC\nरजिस्ट्रेशन", "price": 0, "emoji": "📝", "docs": "CSC TEC रजिस्ट्रेशन के लिए कृपया एडमिन से संपर्क करें।", "contact_admin": True},
+            {"id": "csc_tec_exam", "name": "CSC TEC एग्जाम", "btn_name": "TEC\nएग्जाम", "price": 0, "emoji": "📚", "docs": "CSC TEC एग्जाम के लिए कृपया एडमिन से संपर्क करें।", "contact_admin": True}
         ]
     },
     "gov": {
         "name": "🏛️ दूसरे सरकारी काम",
-        "desc": "ड्राइविंग लाइसेंस, जन्म प्रमाण पत्र आदि",
+        "desc": "ड्राइविंग लाइसेंस, ई-श्रम आदि",
         "services": [
-            {"id": "dl_learner",     "name": "ड्राइविंग लाइसेंस (लर्निंग) बनवाना",    "price": 0, "emoji": "🚗", "docs": "आधार कार्ड, फोटो, मेडिकल फॉर्म\n\n⚠️ <b>ध्यान दें:</b> इस काम की फीस और पूरी प्रोसेस के लिए कृपया एडमिन से संपर्क करें।", "contact_admin": True},
-            {"id": "dl_permanent",   "name": "ड्राइविंग लाइसेंस (पक्का) बनवाना",      "price": 0, "emoji": "🚙", "docs": "लर्निंग लाइसेंस, आधार, फोटो\n\n⚠️ <b>ध्यान दें:</b> इस काम की फीस और पूरी प्रोसेस के लिए कृपया एडमिन से संपर्क करें।", "contact_admin": True},
-            {"id": "birth_cert",     "name": "जन्म प्रमाण पत्र बनवाना",               "price": 200, "emoji": "👶", "docs": "अस्पताल की पर्ची, माता-पिता का आधार"},
-            {"id": "eshram",         "name": "ई-श्रम कार्ड बनवाना (मजदूरों के लिए)",  "price": 50,  "emoji": "👷", "docs": "आधार कार्ड, बैंक पासबुक"}
+            {"id": "dl_learner",     "name": "ड्राइविंग लाइसेंस (लर्निंग)",    "btn_name": "DL लर्निंग\nलाइसेंस", "price": 0, "emoji": "🚗", "docs": "आधार कार्ड, फोटो, मेडिकल फॉर्म\n\n⚠️ <b>ध्यान दें:</b> फीस और प्रोसेस के लिए एडमिन से संपर्क करें।", "contact_admin": True},
+            {"id": "dl_permanent",   "name": "ड्राइविंग लाइसेंस (पक्का)",      "btn_name": "DL पक्का\nलाइसेंस", "price": 0, "emoji": "🚙", "docs": "लर्निंग लाइसेंस, आधार, फोटो\n\n⚠️ <b>ध्यान दें:</b> फीस और प्रोसेस के लिए एडमिन से संपर्क करें।", "contact_admin": True},
+            {"id": "eshram",         "name": "ई-श्रम कार्ड (मजदूरों के लिए)",  "btn_name": "ई-श्रम\nकार्ड", "price": 50,  "emoji": "👷", "docs": "आधार कार्ड, बैंक पासबुक"}
         ]
     }
 }
@@ -144,16 +153,15 @@ def find_service(service_id):
     return None
 
 def main_menu_keyboard():
-    keyboard, cats = [], list(CATEGORIES.items())
-    for i in range(0, len(cats), 2):
-        row = [InlineKeyboardButton(cats[i][1]["name"], callback_data=f"cat_{cats[i][0]}")]
-        if i + 1 < len(cats):
-            row.append(InlineKeyboardButton(cats[i+1][1]["name"], callback_data=f"cat_{cats[i+1][0]}"))
-        keyboard.append(row)
-    
-    # नया बटन: अन्य काम के लिए
-    keyboard.append([InlineKeyboardButton("📝 कोई और काम (Other Service)", callback_data="other_service")])
-    
+    # मुख्य मेनू के बटन (2 कॉलम)
+    keyboard = [
+        [InlineKeyboardButton("💳 पैन कार्ड", callback_data="cat_pan"), InlineKeyboardButton("🆔 आधार कार्ड", callback_data="cat_aadhaar")],
+        [InlineKeyboardButton("🍚 राशन कार्ड", callback_data="cat_ration"), InlineKeyboardButton("📜 जाति/निवास/आय", callback_data="cat_certificates")],
+        [InlineKeyboardButton("🗳️ वोटर आईडी", callback_data="cat_voter"), InlineKeyboardButton("🎓 फॉर्म/एडमिट", callback_data="cat_exam")],
+        [InlineKeyboardButton("💼 टैक्स/बिजनेस", callback_data="cat_tax"), InlineKeyboardButton("🖨️ प्रिंट/कॉपी", callback_data="cat_print")],
+        [InlineKeyboardButton("💻 CSC के काम", callback_data="cat_csc"), InlineKeyboardButton("🏛️ अन्य सरकारी", callback_data="cat_gov")],
+        [InlineKeyboardButton("📝 कोई और काम (Other)", callback_data="other_service")]
+    ]
     return InlineKeyboardMarkup(keyboard)
 
 def get_reply_keyboard():
@@ -167,11 +175,11 @@ def get_reply_keyboard():
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    msg = await update.message.reply_text("🤖 <b>बॉट शुरू हो रहा है...</b>", parse_mode=ParseMode.HTML)
+    msg = await update.message.reply_text("✨ <b>बॉट शुरू हो रहा है...</b>", parse_mode=ParseMode.HTML)
     await asyncio.sleep(0.4)
-    await msg.edit_text("🔧 <b>सर्विस लोड हो रही हैं...</b>", parse_mode=ParseMode.HTML)
+    await msg.edit_text("⚙️ <b>सर्विस लोड हो रही हैं...</b>", parse_mode=ParseMode.HTML)
     await asyncio.sleep(0.4)
-    await msg.edit_text("✨ <b>बस थोड़ा सा और इंतज़ार करें...</b>", parse_mode=ParseMode.HTML)
+    await msg.edit_text("🎯 <b>बस थोड़ा सा और इंतज़ार करें...</b>", parse_mode=ParseMode.HTML)
     await asyncio.sleep(0.4)
 
     total = sum(len(c["services"]) for c in CATEGORIES.values())
@@ -179,14 +187,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🙏 <b>नमस्ते, {user.first_name}!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🏪 <b>{PAYEE_NAME}</b> में आपका स्वागत है!\n\n"
-        f"✅ <b>{total}+</b> सर्विसेज उपलब्ध हैं\n"
-        f"💳 <b>UPI पेमेंट</b> — इंस्टेंट QR कोड\n"
-        f"⚡ <b>तेज़ काम</b> — 100% भरोसेमंद\n"
+        f"🔹 <b>{total}+</b> सर्विसेज उपलब्ध हैं\n"
+        f"🔹 <b>UPI पेमेंट</b> — इंस्टेंट QR कोड\n"
+        f"🔹 <b>तेज़ और भरोसेमंद काम</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"👇 <b>नीचे से कोई कैटेगरी चुनें:</b>"
     )
     await msg.edit_text(welcome, reply_markup=main_menu_keyboard(), parse_mode=ParseMode.HTML)
-    await update.message.reply_text("👆 आप नीचे दिए गए बटन से भी मेनू खोल सकते हैं।", reply_markup=get_reply_keyboard())
+    await update.message.reply_text("💡 आप नीचे दिए गए बटन से भी मेनू खोल सकते हैं।", reply_markup=get_reply_keyboard())
 
 
 async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -202,22 +210,30 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await asyncio.sleep(0.3)
 
     keyboard = []
-    for svc in cat["services"]:
-        if svc.get("contact_admin"):
-            price_text = "एडमिन से पूछें"
-        else:
-            price_text = f"₹{svc['price']}" if svc["price"] > 0 else "फ्री जानकारी"
-            
-        keyboard.append([InlineKeyboardButton(
-            f"{svc['emoji']} {svc['name']} — {price_text}",
-            callback_data=f"svc_{svc['id']}"
-        )])
+    services = cat["services"]
+    
+    # 2-2 के जोड़े में बटन बनाने का लॉजिक (Landscape)
+    for i in range(0, len(services), 2):
+        row = []
+        # पहला बटन
+        svc1 = services[i]
+        name1 = svc1.get("btn_name", svc1["name"]) # btn_name इस्तेमाल करें
+        row.append(InlineKeyboardButton(f"{svc1['emoji']} {name1}", callback_data=f"svc_{svc1['id']}"))
+        
+        # दूसरा बटन (अगर मौजूद है)
+        if i + 1 < len(services):
+            svc2 = services[i+1]
+            name2 = svc2.get("btn_name", svc2["name"])
+            row.append(InlineKeyboardButton(f"{svc2['emoji']} {name2}", callback_data=f"svc_{svc2['id']}"))
+        
+        keyboard.append(row)
+        
     keyboard.append([InlineKeyboardButton("🔙 मुख्य मेनू", callback_data="back_main")])
 
     text = (
-        f"{cat['name']}\n"
+        f"📂 <b>{cat['name']}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<i>{cat['desc']}</i>\n\n"
+        f"ℹ️ <i>{cat['desc']}</i>\n\n"
         f"👇 <b>सर्विस चुनें:</b>"
     )
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
@@ -235,7 +251,6 @@ async def show_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["selected_service"] = svc
     is_contact_admin = svc.get("contact_admin", False)
 
-    # अगर एडमिन से संपर्क करना है, तो पेमेंट का बटन नहीं दिखेगा
     if is_contact_admin:
         keyboard = [
             [InlineKeyboardButton("🔙 मुख्य मेनू", callback_data="back_main")],
@@ -248,13 +263,12 @@ async def show_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         price_text = f"₹{svc['price']}"
     
-    # जरूरी कागजात दिखाने का लॉजिक
     docs_text = ""
     if svc.get("docs"):
-        docs_text = f"\n📄 <b>क्या-क्या लाना है:</b>\n<blockquote>{svc['docs']}</blockquote>\n"
+        docs_text = f"\n📄 <b>ज़रूरी कागजात:</b>\n<blockquote>{svc['docs']}</blockquote>\n"
 
     text = (
-        f"{svc['emoji']} <b>{svc['name']}</b>\n"
+        f"🛠️ <b>{svc['name']}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"💰 <b>फीस:</b> {price_text}\n"
         f"{docs_text}"
@@ -268,8 +282,8 @@ async def show_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         text += (
-            f"\n💡 पेमेंट करने के लिए <b>पेमेंट करें</b> दबाएं।\n"
-            f"QR स्कैन करके पैसे भेजें, और स्क्रीनशॉट यहाँ भेज दें।"
+            f"\n📌 <b>ध्यान दें:</b> पेमेंट करने के बाद अपने सभी <b>डॉक्यूमेंट्स (कागजात)</b> और <b>स्क्रीनशॉट</b> यहीं इस चैट में भेज दें।\n\n"
+            f"👇 पेमेंट करने के लिए नीचे बटन दबाएं।"
         )
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
@@ -311,13 +325,12 @@ async def pay_now(update: Update, context: ContextTypes.DEFAULT_TYPE):
         caption = (
             f"💳 <b>पेमेंट की जानकारी</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"{svc['emoji']} <b>सर्विस:</b> {svc['name']}\n"
-            f"💰 <b>फीस:</b> ₹{amount}\n"
+            f"🛠️ <b>सर्विस:</b> {svc['name']}\n"
+            f"💰 <b>कुल फीस:</b> ₹{amount}\n"
             f"🆔 <b>UPI ID:</b> <code>{UPI_ID}</code>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"📸 <b>QR स्कैन करके पेमेंट करें</b>\n"
-            f"पेमेंट के बाद अपना <b>स्क्रीनशॉट यहाँ भेजें</b> और अपने कागजात (डॉक्यूमेंट्स) भी भेज दें।\n"
-            f"चेक करने के बाद आपका काम शुरू हो जाएगा। ✅"
+            f"📸 <b>QR स्कैन करके पेमेंट करें</b>\n\n"
+            f"📌 <b>ध्यान दें:</b> पेमेंट के बाद अपना <b>स्क्रीनशॉट</b> और अपने सभी <b>ज़रूरी कागजात (डॉक्यूमेंट्स)</b> यहीं इस चैट में भेज दें। ✅"
         )
         await context.bot.send_photo(chat_id=chat_id, photo=buf, caption=caption, parse_mode=ParseMode.HTML)
     except Exception:
@@ -327,14 +340,9 @@ async def pay_now(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text="❌ QR कोड नहीं बन पाया। एडमिन से बात करें।"
         )
 
-# ------------------------------------------------------------
-# नया हैंडलर: अन्य काम के लिए
-# ------------------------------------------------------------
 async def ask_other_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
-    # यूजर को स्टेट में डाल दो कि वो कस्टम रिक्वेस्ट टाइप करने वाला है
     context.user_data['awaiting_custom_request'] = True
     
     await query.edit_message_text(
@@ -352,15 +360,14 @@ async def back_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     context.user_data.pop("selected_service", None)
-    # अगर कस्टम रिक्वेस्ट का स्टेट चालू था तो उसे बंद कर दो
     context.user_data.pop("awaiting_custom_request", None) 
     
     total = sum(len(c["services"]) for c in CATEGORIES.values())
     text = (
         f"🏪 <b>{PAYEE_NAME}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"✅ <b>{total}+</b> सर्विसेज उपलब्ध हैं\n"
-        f"💳 <b>UPI पेमेंट</b> — इंस्टेंट QR कोड\n\n"
+        f"🔹 <b>{total}+</b> सर्विसेज उपलब्ध हैं\n"
+        f"🔹 <b>UPI पेमेंट</b> — इंस्टेंट QR कोड\n\n"
         f"👇 <b>कैटेगरी चुनें:</b>"
     )
     await query.edit_message_text(text, reply_markup=main_menu_keyboard(), parse_mode=ParseMode.HTML)
@@ -472,7 +479,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"2️⃣ सर्विस चुनें\n"
         f"3️⃣ 'पेमेंट करें' दबाएं\n"
         f"4️⃣ QR स्कैन करके पैसे भेजें\n"
-        f"5️⃣ स्क्रीनशॉट और कागजात भेजें\n"
+        f"5️⃣ स्क्रीनशॉट और कागजात यहीं भेजें\n"
         f"6️⃣ एडमिन चेक करेगा\n\n"
         f"📞 <b>कॉन्टैक्ट:</b> {PAYEE_NAME}"
     )
@@ -489,14 +496,12 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# नया टेक्स्ट हैंडलर (बटन, कस्टम रिक्वेस्ट और रैंडम मैसेज के लिए)
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user = update.effective_user
     
-    # 1. चेक करें कि क्या यूजर 'अन्य काम' के लिए मैसेज टाइप कर रहा है?
     if context.user_data.get('awaiting_custom_request'):
-        context.user_data['awaiting_custom_request'] = False # स्टेट रीसेट करें
+        context.user_data['awaiting_custom_request'] = False
         
         admin_text = (
             f"🔔 <b>नया कस्टम रिक्वेस्ट (Other Service)</b>\n"
@@ -521,13 +526,12 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ मैसेज भेजने में दिक्कत आई। कृपया बाद में कोशिश करें।")
         return
 
-    # 2. अगर नीचे वाले बटन दबाए गए हैं
     if "सर्विस मेनू" in text:
         total = sum(len(c["services"]) for c in CATEGORIES.values())
         await update.message.reply_text(
             f"🏪 <b>{PAYEE_NAME}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"✅ <b>{total}+</b> सर्विसेज उपलब्ध हैं\n"
+            f"🔹 <b>{total}+</b> सर्विसेज उपलब्ध हैं\n"
             f"👇 <b>कैटेगरी चुनें:</b>",
             reply_markup=main_menu_keyboard(),
             parse_mode=ParseMode.HTML
@@ -543,7 +547,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML
         )
     else:
-        # 3. अगर कोई कुछ और टाइप करे
         await update.message.reply_text(
             f"नमस्ते {user.first_name}! मैं आपकी क्या मदद कर सकता हूँ?\n\n"
             f"काम करवाने के लिए नीचे मेनू से चुनें या <b>🛍️ सर्विस मेनू</b> बटन दबाएं।",
@@ -565,14 +568,10 @@ def main():
     app.add_handler(CallbackQueryHandler(back_main, pattern="^back_main$"))
     app.add_handler(CallbackQueryHandler(admin_action, pattern="^(approve|reject)_"))
     
-    # फोटो/इमेज हैंडलर
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, payment_proof))
-    
-    # टेक्स्ट हैंडलर
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     
     app.run_polling(allowed_updates=Update.ALL_TYPES)
-
 
 if __name__ == "__main__":
     main()
