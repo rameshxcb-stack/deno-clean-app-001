@@ -34,16 +34,10 @@ UPI_ID        = os.getenv("UPI_ID")
 PAYEE_NAME    = os.getenv("PAYEE_NAME", "मेरा साइबर कैफे")
 ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
 
-# Safety Check for Token (Review Point 3)
+# Safety Check for Token
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN is missing! Please set it in GitHub Secrets.")
 # ============================================================
-
-# Telegram Message Effect IDs
-EFFECT_CONFETTI = "5046509860389126442"  
-EFFECT_HEART = "5159385139981059251"     
-EFFECT_STARS = "5104841245755180586"     
-EFFECT_THUMBS = "5107584321108051014"    
 
 # ------------------------------------------------------------
 # 🖼️ फॉन्ट डाउनलोडर (हिंदी के लिए Fix)
@@ -63,34 +57,29 @@ def ensure_hindi_font():
             logger.error(f"Font download failed: {e}")
 
 # ------------------------------------------------------------
-# 🎬 GIF बैनर जेनरेटर (CSS जैसा एनिमेशन)
+# 🎬 GIF बैनर जेनरेटर
 # ------------------------------------------------------------
 def create_animated_banner(title, subtitle="Premium Digital Services"):
     frames = []
-    # गहरे रंगों का ग्रेडिएंट (जो धीरे-धीरे बदलेगा)
     colors = [(10,15,30), (20,25,50), (30,35,70), (20,25,50)] 
     
     for i, bg in enumerate(colors):
         img = Image.new('RGB', (800, 400), color=bg)
         draw = ImageDraw.Draw(img)
         
-        # Glowing border (बॉर्डर का चमकना)
         glow = 150 + int(105 * abs((i % 4) - 2) / 2) 
         draw.rectangle([(0,0),(800,10)], fill=(255, 215, glow))
         draw.rectangle([(0,390),(800,400)], fill=(255, 215, glow))
         draw.rectangle([(0,0),(10,400)], fill=(glow//2, 150, 255))
         draw.rectangle([(790,0),(800,400)], fill=(glow//2, 150, 255))
         
-        # हिंदी फॉन्ट लोड करना
         try:
             font_large = ImageFont.truetype(FONT_PATH, 60)
             font_small = ImageFont.truetype(FONT_PATH, 30)
         except IOError:
-            # Fallback अगर फॉन्ट डाउनलोड न हो पाए
             font_large = ImageFont.load_default()
             font_small = ImageFont.load_default()
         
-        # Text fade-in effect (टेक्स्ट का धीरे-धीरे आना)
         alpha_factor = min(1.0, (i + 1) / 2)
         text_color = tuple(int(c * alpha_factor) for c in (255,255,255))
         
@@ -260,7 +249,6 @@ def get_reply_keyboard():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
-    # Smooth Spinning Animation
     frames = ["🕐", "🕒", "🕕", "🕖", "🕘", "🕚"]
     msg = await update.message.reply_text(f"{frames[0]} <b>बॉट शुरू हो रहा है...</b>", parse_mode=ParseMode.HTML)
     
@@ -269,7 +257,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await msg.edit_text(f"{frame} <b>सर्विस लोड हो रही है...</b>", parse_mode=ParseMode.HTML)
         except:
-            pass # Ignore "Message is not modified" error
+            pass
     
     try:
         await msg.edit_text("🎯 <b>तैयार है!</b>", parse_mode=ParseMode.HTML)
@@ -284,7 +272,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     total = sum(len(c["services"]) for c in CATEGORIES.values())
     
-    # GIF Banner Generation
     banner = create_animated_banner(PAYEE_NAME, "Premium Digital Services")
     welcome_text = (
         f"🙏 <b>नमस्ते, {user.first_name}!</b>\n\n"
@@ -300,8 +287,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 animation=banner,
                 caption=welcome_text,
                 parse_mode=ParseMode.HTML,
-                reply_markup=main_menu_keyboard(),
-                message_effect_id=EFFECT_CONFETTI
+                reply_markup=main_menu_keyboard()
             )
         except Exception as e:
             logger.error(f"GIF failed, sending text: {e}")
@@ -310,8 +296,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             welcome_text, 
             reply_markup=main_menu_keyboard(), 
-            parse_mode=ParseMode.HTML,
-            message_effect_id=EFFECT_CONFETTI
+            parse_mode=ParseMode.HTML
         )
         
     await update.message.reply_text("💡 नीचे दिए गए बटन से भी मेनू खोल सकते हैं।", reply_markup=get_reply_keyboard())
@@ -359,13 +344,11 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
         
-    # Stars Animation
     await context.bot.send_message(
         chat_id=query.message.chat_id,
         text=text,
         reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode=ParseMode.HTML,
-        message_effect_id=EFFECT_STARS
+        parse_mode=ParseMode.HTML
     )
 
 
@@ -396,7 +379,8 @@ async def show_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     docs_text = ""
     if svc.get("docs"):
-        docs_text = f"\n📄 <b>ज़रूरी जानकारी / कागजात:</b>\n<blockquote expandable><tg-spoiler>{svc['docs']}</tg-spoiler></blockquote>\n"
+        # Spoiler aur blockquote remove kar diya gaya hai
+        docs_text = f"\n📄 <b>ज़रूरी जानकारी / कागजात:</b>\n{svc['docs']}\n"
 
     text = (
         f"🛠️ <b>{svc['name']}</b>\n"
@@ -420,7 +404,6 @@ async def show_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
     except Exception as e:
-        # Ignore "Message is not modified" error (Review Point 4)
         if "Message is not modified" not in str(e):
             logger.error(f"Edit message error: {e}")
 
@@ -555,8 +538,7 @@ async def payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.send_message(
             chat_id=ADMIN_CHAT_ID, text=admin_text,
-            reply_markup=admin_kb, parse_mode=ParseMode.HTML,
-            message_effect_id=EFFECT_THUMBS
+            reply_markup=admin_kb, parse_mode=ParseMode.HTML
         )
         if update.message.photo:
             await update.message.forward(chat_id=ADMIN_CHAT_ID)
@@ -572,8 +554,7 @@ async def payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💰 <b>फीस:</b> ₹{amount}\n\n"
         f"⏳ एडमिन चेक करके आपको अपडेट देगा।\n"
         f"धन्यवाद! 🙏",
-        parse_mode=ParseMode.HTML,
-        message_effect_id=EFFECT_HEART
+        parse_mode=ParseMode.HTML
     )
     context.user_data.pop("selected_service", None)
     
@@ -603,8 +584,7 @@ async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"अब आपका काम जल्दी शुरू होगा। 🚀\n\n"
                     f"धन्यवाद! 🙏"
                 ),
-                parse_mode=ParseMode.HTML,
-                message_effect_id=EFFECT_CONFETTI
+                parse_mode=ParseMode.HTML
             )
             await query.edit_message_reply_markup(reply_markup=None)
             await query.message.reply_text(f"✅ यूजर <code>{uid}</code> को मैसेज भेज दिया गया है।", parse_mode=ParseMode.HTML)
@@ -677,8 +657,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=ADMIN_CHAT_ID, 
                 text=admin_text, 
-                parse_mode=ParseMode.HTML,
-                message_effect_id=EFFECT_STARS 
+                parse_mode=ParseMode.HTML
             )
             await update.message.reply_text(
                 "✅ <b>आपका मैसेज एडमिन को भेज दिया गया है!</b>\n\n"
@@ -722,7 +701,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-    # फॉन्ट डाउनलोड करना (स्टार्ट होने से पहले)
     ensure_hindi_font()
     
     app = Application.builder().token(BOT_TOKEN).build()
