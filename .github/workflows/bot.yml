@@ -11,9 +11,8 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    # Job-level timeout 58 min — command 55m par khud exit hogi, 
-    # job safely 58 min tak hi rahegi, iske baad GitHub khud kill karega
-    timeout-minutes: 58
+    # Job-level timeout 70 min — taaki 65m wala command safely pura ho sake
+    timeout-minutes: 70
 
     steps:
       - name: Checkout code
@@ -27,11 +26,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run bot (55 min)
+      - name: Run bot (65 min)
         env:
           BOT_TOKEN:     ${{ secrets.BOT_TOKEN }}
           UPI_ID:        ${{ secrets.UPI_ID }}
           PAYEE_NAME:    ${{ secrets.PAYEE_NAME }}
           ADMIN_CHAT_ID: ${{ secrets.ADMIN_CHAT_ID }}
-        # 55 min baad gracefully exit — agle hourly trigger ke liye jagah bachegi
-        run: timeout 55m python cyber_cafe_bot.py || true
+        # 65 min baad gracefully exit — agle trigger ke pending me rehne ke liye
+        run: timeout 65m python cyber_cafe_bot.py || true
