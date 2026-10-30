@@ -2,8 +2,8 @@ name: Cyber Cafe Telegram Bot
 
 on:
   # External cron (cron-job.org) GitHub API se workflow_dispatch trigger karega — har 60 min.
-  # Agar external cron koi run miss kare, to fallback ke liye neeche schedule uncomment karein.
   workflow_dispatch:
+  # Agar external cron koi run miss kare, to fallback ke liye neeche schedule uncomment karein.
   # schedule:
   #   - cron: "0 * * * *"
 
@@ -25,9 +25,11 @@ jobs:
       TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
       ADMIN_USER_IDS: ${{ secrets.ADMIN_USER_IDS }}
       OWNER_USER_IDS: ${{ secrets.OWNER_USER_IDS }}
+      ADMIN_CHAT_ID: ${{ secrets.ADMIN_CHAT_ID }}
       ADMIN_ALERT_CHAT_ID: ${{ secrets.ADMIN_ALERT_CHAT_ID }}
       UPI_ID: ${{ secrets.UPI_ID }}
-      PAYEE_NAME: ${{ vars.PAYEE_NAME }}
+      # Aapne PAYEE_NAME ko Secrets me dala hai, isliye yahan secrets use kiya gaya hai
+      PAYEE_NAME: ${{ secrets.PAYEE_NAME }}
       # Payment auto-verification opt-in hai. Testing ke bina enable na karein.
       PAYMENT_AUTO_VERIFY_ENABLED: ${{ vars.PAYMENT_AUTO_VERIFY_ENABLED }}
       PAYMENT_PROVIDER_ALLOWED_HOSTS: ${{ vars.PAYMENT_PROVIDER_ALLOWED_HOSTS }}
@@ -74,6 +76,7 @@ jobs:
         run: |
           set +e
           # SIGINT bhejo taaki python-telegram-bot gracefully band ho; 30s baad SIGKILL fallback.
+          # Yahan 65m set kiya gaya hai jaisa aapne manga tha.
           timeout --signal=INT --kill-after=30s 65m python -u cyber_cafe_advanced.py
           rc=$?
           # 124=timeout, 130=SIGINT, 143=SIGTERM → ye planned stop hai, failure nahi
