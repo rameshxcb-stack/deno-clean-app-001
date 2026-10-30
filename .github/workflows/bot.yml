@@ -69,7 +69,8 @@ jobs:
           fi
 
       - name: Check Python syntax
-        run: python -m py_compile cyber_cafe_advanced.py
+        # Yahan file ka naam cyber_cafe_bot.py kar diya gaya hai
+        run: python -m py_compile cyber_cafe_bot.py
 
       - name: Run Telegram bot (65 min, graceful shutdown)
         shell: bash
@@ -77,7 +78,8 @@ jobs:
           set +e
           # SIGINT bhejo taaki python-telegram-bot gracefully band ho; 30s baad SIGKILL fallback.
           # Yahan 65m set kiya gaya hai jaisa aapne manga tha.
-          timeout --signal=INT --kill-after=30s 65m python -u cyber_cafe_advanced.py
+          # File ka naam cyber_cafe_bot.py kar diya gaya hai
+          timeout --signal=INT --kill-after=30s 65m python -u cyber_cafe_bot.py
           rc=$?
           # 124=timeout, 130=SIGINT, 143=SIGTERM → ye planned stop hai, failure nahi
           if [ "$rc" -eq 124 ] || [ "$rc" -eq 130 ] || [ "$rc" -eq 143 ]; then
