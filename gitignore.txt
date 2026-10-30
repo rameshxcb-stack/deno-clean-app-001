@@ -1,0 +1,13 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Local Turso embedded replica and exports
+*.sqlite
+*.sqlite3
+*.db
+backups/
+data/
+__pycache__/
+*.py[cod]
