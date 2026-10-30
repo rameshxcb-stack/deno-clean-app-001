@@ -1,36 +1,85 @@
-name: Run Cyber Cafe Bot (Hourly Restart)
+name: Cyber Cafe Telegram Bot
 
 on:
-  # External cron (cron-job.org) workflow_dispatch se trigger karega
+  # External cron (cron-job.org) GitHub API se workflow_dispatch trigger karega — har 60 min.
+  # Agar external cron koi run miss kare, to fallback ke liye neeche schedule uncomment karein.
   workflow_dispatch:
+  # schedule:
+  #   - cron: "0 * * * *"
+
+permissions:
+  contents: read
 
 concurrency:
-  group: telegram-bot
+  group: cyber-cafe-telegram-bot
   cancel-in-progress: false
 
 jobs:
-  run:
+  run-bot:
     runs-on: ubuntu-latest
-    # Job-level timeout 70 min — taaki 65m wala command safely pura ho sake
+    # 65m wala command safely complete ho, isliye 70 min ka job-level timeout.
     timeout-minutes: 70
+    env:
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      ADMIN_USER_IDS: ${{ secrets.ADMIN_USER_IDS }}
+      OWNER_USER_IDS: ${{ secrets.OWNER_USER_IDS }}
+      ADMIN_ALERT_CHAT_ID: ${{ secrets.ADMIN_ALERT_CHAT_ID }}
+      UPI_ID: ${{ secrets.UPI_ID }}
+      PAYEE_NAME: ${{ vars.PAYEE_NAME }}
+      # Payment auto-verification opt-in hai. Testing ke bina enable na karein.
+      PAYMENT_AUTO_VERIFY_ENABLED: ${{ vars.PAYMENT_AUTO_VERIFY_ENABLED }}
+      PAYMENT_PROVIDER_ALLOWED_HOSTS: ${{ vars.PAYMENT_PROVIDER_ALLOWED_HOSTS }}
+      PAYMENT_AUTO_VERIFY_TIMEOUT: "10"
+      DB_PATH: cyber_cafe.sqlite3
+      BACKUP_DIR: backups
+      URGENT_FEE: "50"
+      DEFAULT_SLA_HOURS: "24"
+      MAX_UPLOAD_MB: "15"
+      LOYALTY_POINTS_PER_100: "1"
 
     steps:
-      - name: Checkout code
+      - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
 
-      - name: Run bot (65 min)
-        env:
-          BOT_TOKEN:     ${{ secrets.BOT_TOKEN }}
-          UPI_ID:        ${{ secrets.UPI_ID }}
-          PAYEE_NAME:    ${{ secrets.PAYEE_NAME }}
-          ADMIN_CHAT_ID: ${{ secrets.ADMIN_CHAT_ID }}
-        # 65 min baad gracefully exit — agle trigger ke pending me rehne ke liye
-        run: timeout 65m python cyber_cafe_bot.py || true
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          for name in BOT_TOKEN TURSO_DATABASE_URL TURSO_AUTH_TOKEN; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required GitHub Actions secret: $name"
+              exit 1
+            fi
+          done
+          if [ -z "$ADMIN_USER_IDS" ] && [ -z "$OWNER_USER_IDS" ]; then
+            echo "::warning::No admin/owner IDs configured. Admin controls may be unavailable."
+          fi
+
+      - name: Check Python syntax
+        run: python -m py_compile cyber_cafe_advanced.py
+
+      - name: Run Telegram bot (65 min, graceful shutdown)
+        shell: bash
+        run: |
+          set +e
+          # SIGINT bhejo taaki python-telegram-bot gracefully band ho; 30s baad SIGKILL fallback.
+          timeout --signal=INT --kill-after=30s 65m python -u cyber_cafe_advanced.py
+          rc=$?
+          # 124=timeout, 130=SIGINT, 143=SIGTERM → ye planned stop hai, failure nahi
+          if [ "$rc" -eq 124 ] || [ "$rc" -eq 130 ] || [ "$rc" -eq 143 ]; then
+            echo "Bot stopped at the planned 65-minute runtime limit (graceful)."
+            exit 0
+          fi
+          # Baaki koi bhi exit code real failure hai — job RED dikhegi
+          exit "$rc"
