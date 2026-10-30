@@ -211,6 +211,63 @@ def money(value: Any) -> str:
     except (ValueError, TypeError):
         return "₹0"
 
+# ==========================================
+# LIBSQL ROW_FACTORY FIX (Workaround)
+# ==========================================
+class DictCursorWrapper:
+    """Adapt libsql-experimental cursor rows to sqlite3.Row-like named access."""
+    def __init__(self, cursor):
+        self._cursor = cursor
+        self._description = None
+
+    def execute(self, *args, **kwargs):
+        self._cursor.execute(*args, **kwargs)
+        self._description = self._cursor.description
+        return self
+
+    def _convert_row(self, row):
+        if row is None:
+            return None
+        if self._description:
+            columns = [col[0] for col in self._description]
+            return dict(zip(columns, row))
+        return row
+
+    def fetchone(self):
+        return self._convert_row(self._cursor.fetchone())
+
+    def fetchall(self):
+        rows = self._cursor.fetchall()
+        if rows and self._description:
+            columns = [col[0] for col in self._description]
+            return [dict(zip(columns, row)) for row in rows]
+        return rows
+
+    def __iter__(self):
+        for row in self._cursor:
+            yield self._convert_row(row)
+
+    def __getattr__(self, name):
+        return getattr(self._cursor, name)
+
+
+class DictConnectionWrapper:
+    """Connection proxy that returns cursors with dictionary-style rows."""
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, *args, **kwargs):
+        cursor = self._conn.cursor()
+        return DictCursorWrapper(cursor).execute(*args, **kwargs)
+
+    def cursor(self):
+        return DictCursorWrapper(self._conn.cursor())
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+# ==========================================
+
+
 def _open_db_connection():
     """Open a Turso embedded replica. No silent fallback to a local-only database."""
     if not TURSO_DATABASE_URL or not TURSO_AUTH_TOKEN:
@@ -223,19 +280,20 @@ def _open_db_connection():
         raise RuntimeError(
             "Missing libsql-experimental dependency; install requirements.txt."
         ) from exc
+
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     conn = libsql.connect(
         DB_PATH,
         sync_url=TURSO_DATABASE_URL,
         auth_token=TURSO_AUTH_TOKEN,
     )
-    conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
     # Pull remote changes before reading/writing. Embedded replica writes are local
     # until sync() succeeds, so every transaction syncs before the connection closes.
     conn.sync()
-    return conn
-
+    # libsql-experimental may not implement sqlite3.Connection.row_factory.
+    # Wrap the connection so SELECT rows support row["column_name"] access.
+    return DictConnectionWrapper(conn)
 @contextmanager
 def db() -> Any:
     conn = _open_db_connection()
