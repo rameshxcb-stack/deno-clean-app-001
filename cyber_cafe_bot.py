@@ -6,6 +6,7 @@ Single-file implementation: persistent SQLite orders, role-based admins, order t
 payment-proof review, optional local OCR (never automatic) checks, receipts, complaints,
 ratings, loyalty, reports, reminders, audit logs, backups, Telegram-managed catalogue, inventory, expense ledger, P&L, CRM and SLA analytics.
 Business records and settings are stored in Turso; no external application APIs except Telegram.
+Performance notes: welcome animation is off by default; admin alerts are concurrent; Telegram HTTP timeouts are bounded.
 
 IMPORTANT DEPLOYMENT NOTE:
 - This is a long-running polling bot. A scheduled GitHub Actions job is NOT a reliable
@@ -72,6 +73,8 @@ log = logging.getLogger("cyber_cafe_bot")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 UPI_ID = os.getenv("UPI_ID", "").strip()
 PAYEE_NAME = os.getenv("PAYEE_NAME", "Digital Service Centre").strip()
+# Keep /start snappy on mobile; set WELCOME_ANIMATION_ENABLED=1 to restore the GIF.
+WELCOME_ANIMATION_ENABLED = os.getenv("WELCOME_ANIMATION_ENABLED", "0").strip() == "1"
 
 # Universal payment adapter is opt-in. Never enable it until a real provider API is
 # configured and tested against authoritative transaction records.
@@ -340,6 +343,11 @@ def init_db() -> None:
             payment_source TEXT, auto_verify_note TEXT, provider_ref TEXT,
             FOREIGN KEY(order_code) REFERENCES orders(order_code)
         );
+        CREATE TABLE IF NOT EXISTS order_archives(
+            order_code TEXT PRIMARY KEY, archived_by INTEGER NOT NULL,
+            archived_at TEXT NOT NULL, reason TEXT DEFAULT '',
+            FOREIGN KEY(order_code) REFERENCES orders(order_code)
+        );
         CREATE TABLE IF NOT EXISTS order_events(
             id INTEGER PRIMARY KEY AUTOINCREMENT, order_code TEXT NOT NULL, actor_id INTEGER,
             old_status TEXT, new_status TEXT, note TEXT, created_at TEXT NOT NULL,
@@ -418,6 +426,74 @@ def init_db() -> None:
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_payment_provider_enabled ON payment_providers(enabled, priority)")
         c.execute("INSERT OR IGNORE INTO app_meta(key,value) VALUES('schema_version','2')")
+
+def order_payment_summary(order_code) -> tuple[str, bool]:
+    # Use columns preloaded into a row where possible; this avoids one Turso round-trip
+    # per order in the 30-record dashboard.
+    if hasattr(order_code, "keys") and "latest_payment_status" in order_code.keys():
+        latest = order_code["latest_payment_status"] or ""
+        verified = bool(order_code["has_verified_payment"])
+        if verified:
+            return ("✅ भुगतान सत्यापित", True)
+        labels = {
+            "": "भुगतान रिकॉर्ड नहीं",
+            "PENDING": "⏳ भुगतान बाकी",
+            "PROOF_RECEIVED": "🧾 प्रमाण मिला—जाँच बाकी",
+            "DUPLICATE_FLAG": "⚠️ प्रमाण की जाँच जरूरी",
+            "REJECTED_BY_ADMIN": "❌ प्रमाण अस्वीकृत",
+            "REVERSED_BY_ADMIN": "⚠️ फिर से जाँच जरूरी",
+        }
+        return (labels.get(latest, latest or "भुगतान रिकॉर्ड नहीं"), False)
+    with db() as c:
+        rows = c.execute("SELECT status FROM payments WHERE order_code=? ORDER BY id DESC",
+                         (order_code["order_code"] if hasattr(order_code, "keys") else order_code,)).fetchall()
+    if not rows:
+        return ("भुगतान रिकॉर्ड नहीं", False)
+    if any(r["status"] in {"VERIFIED_BY_ADMIN", "AUTO_VERIFIED"} for r in rows):
+        return ("✅ भुगतान सत्यापित", True)
+    latest = rows[0]["status"]
+    labels = {
+        "PENDING": "⏳ भुगतान बाकी",
+        "PROOF_RECEIVED": "🧾 प्रमाण मिला—जाँच बाकी",
+        "DUPLICATE_FLAG": "⚠️ प्रमाण की जाँच जरूरी",
+        "REJECTED_BY_ADMIN": "❌ प्रमाण अस्वीकृत",
+        "REVERSED_BY_ADMIN": "⚠️ फिर से जाँच जरूरी",
+    }
+    return (labels.get(latest, latest), False)
+
+
+def order_document_summary(order_code) -> tuple[int, str]:
+    if hasattr(order_code, "keys") and "document_count" in order_code.keys():
+        count = int(order_code["document_count"] or 0)
+    else:
+        with db() as c:
+            row = c.execute("SELECT COUNT(*) AS n FROM documents WHERE order_code=?",
+                            (order_code["order_code"] if hasattr(order_code, "keys") else order_code,)).fetchone()
+        count = int(row["n"] or 0)
+    return count, ("📄 दस्तावेज़ आ गए" if count else "📭 दस्तावेज़ बाकी")
+
+
+def order_is_archived(order_code) -> bool:
+    if hasattr(order_code, "keys") and "is_archived" in order_code.keys():
+        return bool(order_code["is_archived"])
+    code = order_code["order_code"] if hasattr(order_code, "keys") else order_code
+    with db() as c:
+        return c.execute("SELECT 1 FROM order_archives WHERE order_code=?",
+                         (code,)).fetchone() is not None
+
+
+def pending_resume_rows(user_id: int, limit: int = 8):
+    with db() as c:
+        return c.execute("""SELECT o.*,
+              COALESCE((SELECT p.status FROM payments p WHERE p.order_code=o.order_code ORDER BY p.id DESC LIMIT 1),'') AS latest_payment_status,
+              EXISTS(SELECT 1 FROM payments p WHERE p.order_code=o.order_code
+                     AND p.status IN ('VERIFIED_BY_ADMIN','AUTO_VERIFIED')) AS has_verified_payment,
+              (SELECT COUNT(*) FROM documents d WHERE d.order_code=o.order_code) AS document_count
+            FROM orders o LEFT JOIN order_archives a ON a.order_code=o.order_code
+            WHERE o.user_id=? AND a.order_code IS NULL
+              AND o.status NOT IN ('COMPLETED','CANCELLED','REFUNDED','REJECTED')
+            ORDER BY o.id DESC LIMIT ?""", (user_id, limit)).fetchall()
+
 
 def audit(actor_id: Optional[int], action: str, target: str = "", details: str = "") -> None:
     with db() as c:
@@ -547,15 +623,24 @@ async def safe_send(bot, chat_id: int, text: str, **kwargs):
     return None
 
 async def notify_admins(context: ContextTypes.DEFAULT_TYPE, text: str, reply_markup=None):
+    """Send to all configured admins concurrently so one slow chat doesn't delay others."""
     recipients = set(ADMIN_USER_IDS) | set(OWNER_USER_IDS)
     if ADMIN_ALERT_CHAT_ID:
         recipients.add(ADMIN_ALERT_CHAT_ID)
-    for admin_id in recipients:
+    if not recipients:
+        return
+
+    async def _send(admin_id: int):
         try:
-            await context.bot.send_message(chat_id=admin_id, text=text, parse_mode=ParseMode.HTML,
-                                           reply_markup=reply_markup)
+            await context.bot.send_message(
+                chat_id=admin_id, text=text, parse_mode=ParseMode.HTML,
+                reply_markup=reply_markup, connect_timeout=5, write_timeout=8,
+                read_timeout=8, pool_timeout=5,
+            )
         except Exception:
-            log.exception("Admin notification failed")
+            log.warning("Admin notification failed for configured recipient", exc_info=True)
+
+    await asyncio.gather(*(_send(admin_id) for admin_id in recipients), return_exceptions=True)
 
 def ensure_font() -> None:
     """Use only a locally supplied font; never download anything from the internet."""
@@ -602,12 +687,15 @@ def create_receipt(order, customer_name: str, payment_ref: str):
             pdf.set_font("Noto", size=14)
             pdf.cell(0, 12, "सेवा रसीद", new_x="LMARGIN", new_y="NEXT", align="C")
             pdf.set_font("Noto", size=10)
+            payment = get_payment(payment_ref) if payment_ref and payment_ref != "N/A" else None
             lines = [
                 f"Order ID: {order['order_code']}",
                 f"Customer: {customer_name}",
                 f"Service: {order['service_name']}",
                 f"Amount: INR {order['amount']}",
                 f"Payment Ref: {payment_ref}",
+                f"Payment Status: {payment['status'] if payment else 'NOT AVAILABLE'}",
+                f"UTR: {payment['utr'] if payment and payment['utr'] else 'N/A'}",
                 f"Status: {ORDER_STATUSES.get(order['status'], order['status'])}",
                 f"Date (UTC): {now_iso()}",
                 "This receipt confirms the recorded order/payment review status only.",
@@ -1373,8 +1461,9 @@ def reply_keyboard():
     # Keep text labels short so they fit on small screens; full descriptions are in chat.
     return ReplyKeyboardMarkup([
         [KeyboardButton("🛍️ सर्विस मेनू")],
-        [KeyboardButton("📦 मेरे ऑर्डर"), KeyboardButton("🆘 मदद")],
-        [KeyboardButton("📞 संपर्क"), KeyboardButton("❌ रद्द करें")],
+        [KeyboardButton("📦 मेरे ऑर्डर"), KeyboardButton("📍 काम की स्थिति")],
+        [KeyboardButton("🆘 मदद"), KeyboardButton("📞 संपर्क")],
+        [KeyboardButton("❌ रद्द करें")],
     ], resize_keyboard=True, is_persistent=True, input_field_placeholder="अपना काम लिखें या मेनू चुनें…")
 
 
@@ -1404,16 +1493,57 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔒 कृपया OTP, पासवर्ड या बैंक PIN कभी न भेजें।\n"
         "भुगतान की अंतिम पुष्टि आधिकारिक ट्रांजैक्शन रिकॉर्ड से होती है।"
     )
-    try:
-        banner = create_banner(PAYEE_NAME, "Digital Services")
-        await update.effective_message.reply_animation(animation=banner, caption=text,
-            parse_mode=ParseMode.HTML)
-    except Exception:
-        log.info("Welcome animation unavailable; continuing with text menu")
+    if WELCOME_ANIMATION_ENABLED:
+        try:
+            banner = create_banner(PAYEE_NAME, "Digital Services")
+            await update.effective_message.reply_animation(
+                animation=banner, caption=text, parse_mode=ParseMode.HTML,
+                connect_timeout=5, write_timeout=8, read_timeout=8, pool_timeout=5,
+            )
+        except Exception:
+            log.info("Welcome animation unavailable; continuing with text menu")
+    else:
+        # Fast path: don't generate/upload a GIF on every /start.
+        await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML)
     # Keep inline buttons on a normal text message so edit_message_text callbacks work reliably.
     await update.effective_message.reply_text("👇 <b>सर्विस चुनें:</b>", parse_mode=ParseMode.HTML,
                                               reply_markup=main_keyboard())
     await update.effective_message.reply_text("नीचे के मेनू से भी विकल्प चुन सकते हैं।", reply_markup=reply_keyboard())
+    # Persistent database records survive Telegram chat deletion and /start context reset.
+    if is_admin(user.id):
+        with db() as c:
+            pending_count = c.execute("""SELECT COUNT(*) AS n FROM orders o
+                LEFT JOIN order_archives a ON a.order_code=o.order_code
+                WHERE a.order_code IS NULL AND o.status NOT IN
+                ('COMPLETED','CANCELLED','REFUNDED','REJECTED')""").fetchone()["n"]
+        await update.effective_message.reply_text(
+            f"🧭 <b>काम का कंट्रोल पैनल</b>\nPending काम: <b>{pending_count}</b>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📄 भुगतान + दस्तावेज़ ट्रैकर", callback_data="admin_list:DOCS")],
+                [InlineKeyboardButton("🕘 पिछले 30 रिकॉर्ड", callback_data="admin_list:RECENT")],
+                [InlineKeyboardButton("🛠️ Admin Menu", callback_data="admin_menu")],
+            ]))
+    else:
+        pending_rows = pending_resume_rows(user.id, 8)
+        if pending_rows:
+            lines = ["🧭 <b>आपके Pending काम — चैट साफ होने पर भी सुरक्षित</b>"]
+            buttons = []
+            for row in pending_rows:
+                pay_label, paid = order_payment_summary(row)
+                doc_count, doc_label = order_document_summary(row)
+                lines.append(f"\n• <code>{esc(row['order_code'])}</code> — {esc(row['service_name'])}\n"
+                             f"{pay_label} · {doc_label} ({doc_count})\n"
+                             f"स्थिति: {esc(ORDER_STATUSES.get(row['status'], row['status']))}")
+                label = "📄 दस्तावेज़ भेजें" if paid and doc_count == 0 else "📍 काम की स्थिति"
+                buttons.append([InlineKeyboardButton(
+                    f"{label} · {row['order_code']}",
+                    callback_data=f"upload_docs:{row['order_code']}" if paid and doc_count == 0
+                                  else f"order_detail:{row['order_code']}")])
+            buttons.append([InlineKeyboardButton("📦 सभी ऑर्डर", callback_data="my_orders")])
+            await update.effective_message.reply_text(
+                "\n".join(lines), parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(buttons))
 
 async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -1536,7 +1666,13 @@ async def create_order_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 async def my_orders(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: Optional[int] = None):
     uid = user_id or update.effective_user.id
     with db() as c:
-        rows = c.execute("SELECT * FROM orders WHERE user_id=? ORDER BY id DESC LIMIT 10", (uid,)).fetchall()
+        rows = c.execute("""SELECT o.*,
+              COALESCE((SELECT p.status FROM payments p WHERE p.order_code=o.order_code ORDER BY p.id DESC LIMIT 1),'') AS latest_payment_status,
+              EXISTS(SELECT 1 FROM payments p WHERE p.order_code=o.order_code
+                     AND p.status IN ('VERIFIED_BY_ADMIN','AUTO_VERIFIED')) AS has_verified_payment,
+              (SELECT COUNT(*) FROM documents d WHERE d.order_code=o.order_code) AS document_count
+            FROM orders o LEFT JOIN order_archives a ON a.order_code=o.order_code
+            WHERE o.user_id=? AND a.order_code IS NULL ORDER BY o.id DESC LIMIT 30""", (uid,)).fetchall()
     if not rows:
         text = "अभी कोई ऑर्डर नहीं है।"
         kb = main_keyboard()
@@ -1544,9 +1680,15 @@ async def my_orders(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id:
         lines = ["<b>📦 आपके हाल के ऑर्डर</b>"]
         buttons = []
         for row in rows:
+            pay_label, paid = order_payment_summary(row)
+            doc_count, doc_label = order_document_summary(row)
             lines.append(f"\n<code>{row['order_code']}</code> — {esc(row['service_name'])}\n"
-                         f"{esc(ORDER_STATUSES.get(row['status'], row['status']))} · {money(row['amount'])}")
-            buttons.append([InlineKeyboardButton(f"🔎 {row['order_code']}", callback_data=f"order_detail:{row['order_code']}")])
+                         f"{esc(ORDER_STATUSES.get(row['status'], row['status']))} · {money(row['amount'])}\n"
+                         f"{pay_label} · {doc_label} ({doc_count})")
+            buttons.append([InlineKeyboardButton(f"📋 {row['order_code']} · पूरा विवरण", callback_data=f"order_detail:{row['order_code']}")])
+            if paid and doc_count == 0:
+                buttons.append([InlineKeyboardButton(f"📄 {row['order_code']} · दस्तावेज़ भेजें", callback_data=f"upload_docs:{row['order_code']}")])
+        buttons.append([InlineKeyboardButton("📄 मेरे Documents", callback_data="my_orders_docs")])
         buttons.append([InlineKeyboardButton("🏠 मुख्य मेनू", callback_data="back_main")])
         text, kb = "\n".join(lines), InlineKeyboardMarkup(buttons)
     if update.callback_query:
@@ -1554,6 +1696,18 @@ async def my_orders(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id:
         await update.callback_query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
     else:
         await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+
+async def my_orders_docs_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    with db() as c:
+        rows = c.execute("SELECT order_code,service_name FROM orders WHERE user_id=? ORDER BY id DESC LIMIT 30",
+                         (q.from_user.id,)).fetchall()
+    buttons = [[InlineKeyboardButton(f"📄 {r['order_code']} · {r['service_name'][:22]}",
+                                     callback_data=f"mydocs:{r['order_code']}")] for r in rows]
+    if not buttons:
+        await q.edit_message_text("अभी कोई order/document नहीं है।"); return
+    await q.edit_message_text("अपने order के documents देखने के लिए चुनें:", reply_markup=InlineKeyboardMarkup(buttons))
 
 async def order_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -1573,15 +1727,29 @@ async def order_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     if pay:
         lines.append(f"Payment Ref: <code>{esc(pay['payment_ref'])}</code> · {esc(pay['status'])}")
+    pay_label, paid = order_payment_summary(code)
+    doc_count, doc_label = order_document_summary(code)
+    lines.extend([f"भुगतान: {pay_label}", f"दस्तावेज़: {doc_label} ({doc_count} फ़ाइल)"])
     if events:
         lines.append("\n<b>इतिहास</b>")
         for ev in events:
             lines.append(f"• {esc(ev['created_at'])}: {esc(ev['new_status'] or '')} — {esc(ev['note'] or '')}")
-    buttons = [[InlineKeyboardButton("⬅️ मेरे ऑर्डर", callback_data="my_orders")]]
-    if order["user_id"] == q.from_user.id and order["status"] not in {"COMPLETED", "CANCELLED", "REFUNDED"}:
-        buttons.append([InlineKeyboardButton("📄 दस्तावेज़ भेजें", callback_data=f"upload_docs:{code}")])
+    buttons = [
+        [InlineKeyboardButton("📄 मेरे Documents देखें", callback_data=f"mydocs:{code}")],
+        [InlineKeyboardButton("📷 Payment Screenshot देखें", callback_data=f"proof_user:{code}")],
+        [InlineKeyboardButton("🧾 Receipt दोबारा डाउनलोड", callback_data=f"receipt_user:{code}")],
+        [InlineKeyboardButton("⬅️ मेरे ऑर्डर", callback_data="my_orders")],
+    ]
+    if order["user_id"] == q.from_user.id and paid and order["status"] not in {"COMPLETED", "CANCELLED", "REFUNDED", "REJECTED"}:
+        buttons.append([InlineKeyboardButton("📄 दस्तावेज़ भेजें — 1 टैप", callback_data=f"upload_docs:{code}")])
+    if order["user_id"] == q.from_user.id:
+        buttons.append([InlineKeyboardButton("🗃️ Pending सूची से हटाएँ", callback_data=f"archive_order:{code}")])
     if is_admin(q.from_user.id):
-        buttons.append([InlineKeyboardButton("🛠️ एडमिन कार्य", callback_data=f"admin_order:{code}")])
+        buttons.extend([
+            [InlineKeyboardButton("📄 ग्राहक से दस्तावेज़ माँगें", callback_data=f"admin_reqdocs:{code}")],
+            [InlineKeyboardButton("✉️ ग्राहक को सीधा संदेश", callback_data=f"admin_msg:{code}")],
+            [InlineKeyboardButton("🛠️ एडमिन कार्य", callback_data=f"admin_order:{code}")],
+        ])
     await q.edit_message_text("\n".join(lines), parse_mode=ParseMode.HTML,
                               reply_markup=InlineKeyboardMarkup(buttons))
 
@@ -1596,10 +1764,70 @@ async def upload_docs_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data["upload_order_code"] = code
     context.user_data["awaiting_document"] = True
     await q.edit_message_text(
-        f"📄 ऑर्डर <code>{esc(code)}</code> के लिए दस्तावेज़ भेजें।\n"
-        f"अधिकतम फ़ाइल आकार: {MAX_UPLOAD_MB} MB.\nOTP, PIN या पासवर्ड न भेजें।\n"
-        "अपलोड रोकने के लिए /cancel दबाएँ।",
-        parse_mode=ParseMode.HTML)
+        f"📄 ऑर्डर <code>{esc(code)}</code> के लिए सभी जरूरी दस्तावेज़ भेजें।\n"
+        f"अधिकतम फ़ाइल आकार: {MAX_UPLOAD_MB} MB प्रति फ़ाइल।\n"
+        "एक-एक करके कई PDF/फोटो भेज सकते हैं। OTP, PIN या पासवर्ड न भेजें।\n"
+        "जब सभी फ़ाइलें भेज दें, नीचे <b>दस्तावेज़ पूरे</b> दबाएँ।",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ दस्तावेज़ पूरे", callback_data=f"finish_docs:{code}")],
+            [InlineKeyboardButton("📍 काम की स्थिति", callback_data=f"order_detail:{code}")]]))
+
+async def finish_documents_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    code = q.data.split(":", 1)[1]
+    order = get_order(code)
+    if not order or order["user_id"] != q.from_user.id:
+        await q.answer("ऑर्डर नहीं मिला या अनुमति नहीं है", show_alert=True)
+        return
+    if context.user_data.get("upload_order_code") == code:
+        context.user_data.pop("awaiting_document", None)
+        context.user_data.pop("upload_order_code", None)
+    count, label = order_document_summary(code)
+    if count <= 0:
+        await q.answer("पहले कम-से-कम एक फ़ाइल भेजें", show_alert=True)
+        await q.edit_message_text(
+            f"⚠️ <b>अभी कोई दस्तावेज़ नहीं मिला</b>\nOrder: <code>{esc(code)}</code>\n"
+            "पहले PDF/फोटो भेजें, फिर दस्तावेज़ पूरे दबाएँ।",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📄 दस्तावेज़ भेजें", callback_data=f"upload_docs:{code}")]]))
+        return
+    await q.answer("दस्तावेज़ अपलोड प्रक्रिया पूरी")
+    await q.edit_message_text(
+        f"✅ <b>दस्तावेज़ सबमिशन पूरा</b>\nOrder: <code>{esc(code)}</code>\n"
+        f"इस ऑर्डर पर कुल फ़ाइलें: <b>{count}</b>\n"
+        "एडमिन दस्तावेज़ जाँचकर जरूरत पड़ने पर आपको संदेश भेज सकता है।",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📍 काम की स्थिति", callback_data=f"order_detail:{code}")],
+            [InlineKeyboardButton("📦 मेरे ऑर्डर", callback_data="my_orders")]]))
+
+
+async def send_media_to_admins(context, file_id: str, mime: str, caption: str, reply_markup=None):
+    """Forward one Telegram file to every configured admin/owner and optional alert chat."""
+    recipients = set(ADMIN_USER_IDS) | set(OWNER_USER_IDS)
+    if ADMIN_ALERT_CHAT_ID:
+        recipients.add(ADMIN_ALERT_CHAT_ID)
+    recipients.discard(0)
+    recipients.discard(None)
+    if not recipients:
+        log.warning("No admin recipients configured for media forwarding")
+        return
+    async def _send(chat_id):
+        try:
+            if (mime or "").lower().startswith("image/"):
+                await context.bot.send_photo(
+                    chat_id=chat_id, photo=file_id, caption=caption[:900],
+                    parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+            else:
+                await context.bot.send_document(
+                    chat_id=chat_id, document=file_id, caption=caption[:900],
+                    parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+        except Exception:
+            log.warning("Admin media forward failed chat_id=%s", chat_id, exc_info=True)
+    await asyncio.gather(*(_send(chat_id) for chat_id in recipients), return_exceptions=True)
+
 
 async def payment_proof_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -1626,16 +1854,28 @@ async def payment_proof_handler(update: Update, context: ContextTypes.DEFAULT_TY
             WHERE p.user_id=? AND p.status IN ('PENDING','PROOF_RECEIVED','DUPLICATE_FLAG')
             ORDER BY p.id DESC LIMIT 10""", (user.id,)).fetchall()
     if not pays:
-        await update.message.reply_text("आपके लिए कोई लंबित Payment Reference नहीं मिला। /myorders देखें।")
+        # If no payment proof is pending, route a file to the latest paid order
+        # that still has no documents. This keeps direct uploads easy for customers.
+        with db() as c:
+            missing = c.execute("""SELECT o.order_code FROM orders o
+                WHERE o.user_id=?
+                  AND EXISTS (SELECT 1 FROM payments p WHERE p.order_code=o.order_code
+                              AND p.status IN ('VERIFIED_BY_ADMIN','AUTO_VERIFIED'))
+                  AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.order_code=o.order_code)
+                  AND o.status NOT IN ('COMPLETED','CANCELLED','REFUNDED','REJECTED')
+                ORDER BY o.updated_at DESC, o.id DESC LIMIT 1""", (user.id,)).fetchone()
+        if missing:
+            context.user_data["upload_order_code"] = missing["order_code"]
+            context.user_data["awaiting_document"] = True
+            await document_handler(update, context)
+            return
+        await update.message.reply_text(
+            "❓ कोई लंबित Payment Reference या दस्तावेज़ बाकी वाला Paid Order नहीं मिला।\n"
+            "नया काम /start से शुरू करें या /myorders में स्थिति देखें।",
+            reply_markup=main_keyboard())
         return
-    if len(pays) > 1:
-        buttons = [[InlineKeyboardButton(f"{p['payment_ref']} · {p['order_code']}", callback_data=f"attach_proof:{p['payment_ref']}")]
-                   for p in pays[:8]]
-        # Store the file ID server-side; Telegram callback_data has a strict 64-byte limit.
-        context.user_data["pending_proof_file"] = file_id
-        await update.message.reply_text("यह प्रमाण किस भुगतान के लिए है? सही Reference चुनें:",
-                                        reply_markup=InlineKeyboardMarkup(buttons))
-        return
+    # One-tap UX: when several proof-pending payments exist, attach to the newest one.
+    # The admin alert contains the exact Order ID and Payment Reference for verification.
     await attach_proof_to_payment(update, context, pays[0]["payment_ref"], file_id, mime, file_name)
 
 async def attach_proof_to_payment(update, context, payment_ref: str, file_id: str, mime: str, file_name: str = ""):
@@ -1712,14 +1952,12 @@ async def attach_proof_to_payment(update, context, payment_ref: str, file_id: st
             [InlineKeyboardButton("📦 ऑर्डर खोलें", callback_data=f"admin_order:{pay['order_code']}")],
         ])
     await notify_admins(context, summary, reply_markup=kb)
-    if ADMIN_ALERT_CHAT_ID:
-        try:
-            if mime.startswith("image/"):
-                await context.bot.send_photo(ADMIN_ALERT_CHAT_ID, file_id, caption=f"Proof for {pay['order_code']} / {payment_ref}")
-            else:
-                await context.bot.send_document(ADMIN_ALERT_CHAT_ID, file_id, caption=f"Proof for {pay['order_code']} / {payment_ref}")
-        except Exception:
-            log.exception("Could not forward payment proof")
+    await send_media_to_admins(
+        context, file_id, mime,
+        f"💳 <b>भुगतान प्रमाण</b>\nOrder: <code>{esc(pay['order_code'])}</code> · "
+        f"Payment: <code>{esc(payment_ref)}</code>\nग्राहक: <code>{pay['user_id']}</code>\n"
+        f"सर्विस: {esc(order['service_name'])} · राशि: {money(pay['expected_amount'])}",
+        reply_markup=kb)
     if auto_result.get("verified"):
         try:
             updated_order = get_order(pay["order_code"])
@@ -1754,22 +1992,35 @@ async def document_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         c.execute("""INSERT INTO documents(order_code,user_id,file_id,file_name,mime_type,file_size,created_at)
                      VALUES(?,?,?,?,?,?,?)""",
                   (code, user.id, file_obj.file_id, file_name[:250], mime, size, now_iso()))
-    context.user_data.pop("awaiting_document", None)
-    context.user_data.pop("upload_order_code", None)
-    await msg.reply_text(f"✅ दस्तावेज़ ऑर्डर <code>{esc(code)}</code> से जोड़ दिया गया।",
-                         parse_mode=ParseMode.HTML)
+    # Keep the upload session active so multiple files can be sent after one tap.
+    # The user explicitly finishes with the inline button below.
+    context.user_data["awaiting_document"] = True
+    context.user_data["upload_order_code"] = code
+    await msg.reply_text(
+        f"✅ फ़ाइल ऑर्डर <code>{esc(code)}</code> से जोड़ दी गई।\n"
+        "और फ़ाइलें हों तो इसी चैट में भेजें; पूरा होने पर नीचे दबाएँ।",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ दस्तावेज़ पूरे", callback_data=f"finish_docs:{code}")],
+            [InlineKeyboardButton("➕ और दस्तावेज़ भेजें", callback_data=f"upload_docs:{code}")]]))
+    pay_label, paid = order_payment_summary(code)
+    doc_count, doc_label = order_document_summary(code)
     await notify_admins(context,
-        f"📄 <b>नया दस्तावेज़</b>\nOrder: <code>{esc(code)}</code>\n"
-        f"ग्राहक: <code>{user.id}</code>\nफ़ाइल: {esc(file_name)}",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📦 ऑर्डर खोलें", callback_data=f"admin_order:{code}")]]))
-    if ADMIN_ALERT_CHAT_ID:
-        try:
-            if msg.photo:
-                await context.bot.send_photo(ADMIN_ALERT_CHAT_ID, file_obj.file_id, caption=f"Document for {code}")
-            elif msg.document:
-                await context.bot.send_document(ADMIN_ALERT_CHAT_ID, file_obj.file_id, caption=f"Document for {code}")
-        except Exception:
-            log.exception("Document forwarding failed")
+        f"📄 <b>नया दस्तावेज़ प्राप्त</b>\nOrder: <code>{esc(code)}</code>\n"
+        f"ग्राहक: <code>{user.id}</code>\nसर्विस: {esc(order['service_name'])}\n"
+        f"भुगतान: {pay_label}\nदस्तावेज़: {doc_label} ({doc_count})\nफ़ाइल: {esc(file_name)}",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔎 पूरा रिकॉर्ड", callback_data=f"admin_order:{code}")],
+            [InlineKeyboardButton("📄 भुगतान + दस्तावेज़ ट्रैकर", callback_data="admin_list:DOCS")],
+        ]))
+    await send_media_to_admins(
+        context, file_obj.file_id, mime,
+        f"📄 <b>ग्राहक का दस्तावेज़</b>\nOrder: <code>{esc(code)}</code>\n"
+        f"ग्राहक: <code>{user.id}</code>\nसर्विस: {esc(order['service_name'])}\n"
+        f"फ़ाइल: {esc(file_name)} · कुल दस्तावेज़: {doc_count}",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔎 पूरा रिकॉर्ड", callback_data=f"admin_order:{code}")],
+            [InlineKeyboardButton("📂 सभी दस्तावेज़ देखें", callback_data=f"admin_docs:{code}")]]))
 
 async def attach_proof_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -1823,17 +2074,36 @@ async def admin_order_view(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text("ऑर्डर नहीं मिला।")
         return
     with db() as c:
-        pays = c.execute("SELECT * FROM payments WHERE order_code=? ORDER BY id DESC LIMIT 3", (code,)).fetchall()
-        docs = c.execute("SELECT * FROM documents WHERE order_code=? ORDER BY id DESC LIMIT 5", (code,)).fetchall()
+        pays = c.execute("SELECT * FROM payments WHERE order_code=? ORDER BY id DESC LIMIT 10", (code,)).fetchall()
+        docs = c.execute("SELECT * FROM documents WHERE order_code=? ORDER BY id DESC LIMIT 30", (code,)).fetchall()
+    customer = get_customer(order["user_id"])
+    customer_name = customer["full_name"] if customer else "Customer"
     lines = [f"<b>🛠️ Admin Order</b> <code>{esc(code)}</code>",
-             f"ग्राहक: <code>{order['user_id']}</code>",
+             f"ग्राहक: {esc(customer_name)} · ID <code>{order['user_id']}</code>",
              f"सर्विस: {esc(order['service_name'])}", f"राशि: {money(order['amount'])}",
              f"स्थिति: {esc(ORDER_STATUSES.get(order['status'], order['status']))}",
-             f"विवरण: {esc(order['description'])}", f"Due: {esc(order['due_at'] or 'N/A')}"]
+             f"विवरण: {esc((order['description'] or '')[:400])}", f"Due: {esc(order['due_at'] or 'N/A')}"]
     for p in pays:
         lines.append(f"Payment: <code>{esc(p['payment_ref'])}</code> — {esc(p['status'])} — UTR {esc(p['utr'] or 'N/A')}")
-    lines.append(f"दस्तावेज़: {len(docs)}")
-    buttons = []
+    pay_label, paid = order_payment_summary(code)
+    doc_count, doc_label = order_document_summary(code)
+    lines.append(f"भुगतान: {pay_label}")
+    lines.append(f"दस्तावेज़: {doc_label} ({doc_count} फ़ाइल)")
+    lines.append("\n<b>📋 पूरा Order Receipt</b>")
+    lines.append(f"ग्राहक ID: <code>{order['user_id']}</code>")
+    for d in docs:
+        lines.append(f"  • {esc((d['file_name'] or 'फ़ाइल')[:80])} · {esc(d['created_at'])}")
+    buttons = [
+        [InlineKeyboardButton("📂 दस्तावेज़ देखें/प्राप्त करें", callback_data=f"admin_docs:{code}")],
+        [InlineKeyboardButton("📷 Payment Screenshot देखें", callback_data=f"proof_admin:{code}")],
+        [InlineKeyboardButton("🧾 Receipt डाउनलोड", callback_data=f"receipt_admin:{code}")],
+        [InlineKeyboardButton("✉️ ग्राहक को सीधा संदेश", callback_data=f"admin_msg:{code}"),
+         InlineKeyboardButton("📄 दस्तावेज़ माँगें", callback_data=f"admin_reqdocs:{code}")],
+    ]
+    if order_is_archived(code):
+        buttons.append([InlineKeyboardButton("♻️ Pending में वापस लाएँ", callback_data=f"unarchive_order:{code}")])
+    else:
+        buttons.append([InlineKeyboardButton("🗃️ Pending सूची से हटाएँ", callback_data=f"archive_order:{code}")])
     # Payment approval is handled only by the payment-review controls, not a generic status button.
     if order["status"] in {"PAYMENT_PENDING", "PAYMENT_REVIEW"}:
         buttons.append([InlineKeyboardButton("💳 Review Payment", callback_data=f"admin_payment:{code}")])
@@ -1854,6 +2124,351 @@ async def admin_order_view(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons.append([InlineKeyboardButton("⬅️ Admin Menu", callback_data="admin_menu")])
     await q.edit_message_text("\n".join(lines), parse_mode=ParseMode.HTML,
                               reply_markup=InlineKeyboardMarkup(buttons))
+
+async def admin_view_documents_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if not is_admin(q.from_user.id):
+        await q.answer("अनुमति नहीं है", show_alert=True)
+        return
+    await q.answer()
+    code = q.data.split(":", 1)[1]
+    order = get_order(code)
+    if not order:
+        await q.edit_message_text("ऑर्डर नहीं मिला।")
+        return
+    with db() as c:
+        docs = c.execute("SELECT * FROM documents WHERE order_code=? ORDER BY id DESC LIMIT 30",
+                         (code,)).fetchall()
+    if not docs:
+        await q.edit_message_text(
+            f"📭 इस ऑर्डर <code>{esc(code)}</code> पर अभी दस्तावेज़ नहीं आए।",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📄 ग्राहक से दस्तावेज़ माँगें", callback_data=f"admin_reqdocs:{code}")],
+                [InlineKeyboardButton("🔎 पूरा रिकॉर्ड", callback_data=f"admin_order:{code}")]]))
+        return
+    await q.edit_message_text(
+        f"📂 <b>{esc(code)} — {len(docs)} दस्तावेज़</b>\n"
+        f"ग्राहक: <code>{order['user_id']}</code>\n"
+        "फ़ाइलें आपके इस Admin चैट में भेजी जा रही हैं…",
+        parse_mode=ParseMode.HTML)
+    sent_count = 0
+    for doc in docs:
+        try:
+            caption = (f"📄 Order: {code}\nफ़ाइल: {doc['file_name'] or 'फ़ाइल'}\n"
+                       f"Upload: {doc['created_at']}")
+            mime = (doc["mime_type"] or "").lower()
+            if mime.startswith("image/"):
+                await context.bot.send_photo(chat_id=q.from_user.id, photo=doc["file_id"], caption=caption[:900])
+            else:
+                await context.bot.send_document(chat_id=q.from_user.id, document=doc["file_id"], caption=caption[:900])
+            sent_count += 1
+        except Exception:
+            log.exception("Admin document resend failed order=%s document_id=%s", code, doc["id"])
+    await safe_send(context.bot, q.from_user.id,
+        f"📂 <code>{esc(code)}</code>: {sent_count}/{len(docs)} फ़ाइलें इस चैट में भेजी गईं।",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔎 पूरा रिकॉर्ड", callback_data=f"admin_order:{code}")],
+            [InlineKeyboardButton("📄 ट्रैकर", callback_data="admin_list:DOCS")]]))
+
+
+async def _send_saved_file(bot, chat_id: int, file_id: str, mime: str, file_name: str, caption: str = ""):
+    if not file_id:
+        return False
+    try:
+        if (mime or "").lower().startswith("image/"):
+            await bot.send_photo(chat_id, photo=file_id, caption=caption[:900] or None)
+        else:
+            await bot.send_document(chat_id, document=file_id, filename=file_name or None,
+                                    caption=caption[:900] or None)
+        return True
+    except Exception:
+        log.warning("Saved file resend failed chat_id=%s", chat_id, exc_info=True)
+        return False
+
+async def my_documents_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    code = q.data.split(":", 1)[1]
+    order = get_order(code)
+    if not order or order["user_id"] != q.from_user.id:
+        await q.edit_message_text("ऑर्डर नहीं मिला या अनुमति नहीं है।")
+        return
+    with db() as c:
+        docs = c.execute("SELECT * FROM documents WHERE order_code=? ORDER BY id", (code,)).fetchall()
+    if not docs:
+        await q.edit_message_text(f"📭 Order <code>{esc(code)}</code> में अभी कोई document दर्ज नहीं है।",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ ऑर्डर", callback_data=f"order_detail:{code}")]]))
+        return
+    lines = [f"<b>📄 आपके Documents — {esc(code)}</b>", f"सेवा: {esc(order['service_name'])}", f"कुल फ़ाइलें: {len(docs)}"]
+    for i, d in enumerate(docs, 1):
+        lines.append(f"{i}. {esc(d['file_name'] or 'फ़ाइल')} · {esc(d['created_at'])}")
+    await q.edit_message_text("\n".join(lines), parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📥 सभी Documents फिर से प्राप्त करें", callback_data=f"redocs:{code}")],
+            [InlineKeyboardButton("🧾 Receipt डाउनलोड", callback_data=f"receipt_user:{code}")],
+            [InlineKeyboardButton("⬅️ ऑर्डर", callback_data=f"order_detail:{code}")]]))
+
+async def resend_documents_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer("फ़ाइलें भेजी जा रही हैं…")
+    code = q.data.split(":", 1)[1]
+    order = get_order(code)
+    if not order or order["user_id"] != q.from_user.id:
+        await q.edit_message_text("ऑर्डर नहीं मिला या अनुमति नहीं है।")
+        return
+    with db() as c:
+        docs = c.execute("SELECT * FROM documents WHERE order_code=? ORDER BY id", (code,)).fetchall()
+    if not docs:
+        await q.message.reply_text("इस ऑर्डर में कोई सेव किया हुआ document नहीं मिला।")
+        return
+    ok = 0
+    for d in docs:
+        if await _send_saved_file(context.bot, q.from_user.id, d["file_id"], d["mime_type"], d["file_name"],
+                                  f"{code} · {d['file_name'] or 'Document'}"):
+            ok += 1
+    await q.message.reply_text(f"📥 {ok}/{len(docs)} documents दोबारा भेजे गए।")
+
+async def _send_receipt_for_order(bot, chat_id: int, order):
+    with db() as c:
+        pay = c.execute("SELECT * FROM payments WHERE order_code=? ORDER BY id DESC LIMIT 1",
+                         (order["order_code"],)).fetchone()
+    customer = get_customer(order["user_id"])
+    ref = pay["payment_ref"] if pay else "N/A"
+    receipt = create_receipt(order, customer["full_name"] if customer else "Customer", ref)
+    if not receipt:
+        await safe_send(bot, chat_id, "❌ Receipt PDF नहीं बन सकी।")
+        return
+    await bot.send_document(chat_id, receipt, caption=f"🧾 Order Receipt · {order['order_code']}")
+
+async def user_receipt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer("Receipt तैयार हो रही है…")
+    code = q.data.split(":", 1)[1]
+    order = get_order(code)
+    if not order or order["user_id"] != q.from_user.id:
+        await q.edit_message_text("ऑर्डर नहीं मिला या अनुमति नहीं है।")
+        return
+    await _send_receipt_for_order(context.bot, q.from_user.id, order)
+
+async def payment_proof_re_view_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    admin_mode = q.data.startswith("proof_admin:")
+    if admin_mode and not is_admin(q.from_user.id):
+        await q.answer("अनुमति नहीं है", show_alert=True); return
+    await q.answer()
+    code = q.data.split(":", 1)[1]
+    order = get_order(code)
+    if not order or (not admin_mode and order["user_id"] != q.from_user.id):
+        await q.edit_message_text("ऑर्डर नहीं मिला या अनुमति नहीं है।"); return
+    with db() as c:
+        pays = c.execute("SELECT * FROM payments WHERE order_code=? AND proof_file_id IS NOT NULL ORDER BY id DESC",
+                         (code,)).fetchall()
+    if not pays:
+        await q.message.reply_text("इस ऑर्डर के लिए कोई सेव किया हुआ Payment Screenshot नहीं मिला।")
+        return
+    sent = 0
+    for pay in pays:
+        caption = f"💳 Payment Proof · {code}\nRef: {pay['payment_ref']} · Status: {pay['status']}"
+        if await _send_saved_file(context.bot, q.from_user.id, pay["proof_file_id"], pay["proof_kind"],
+                                  f"{pay['payment_ref']}_proof", caption):
+            sent += 1
+    await q.message.reply_text(f"📷 {sent}/{len(pays)} payment proof file(s) भेजी गईं।")
+
+async def admin_receipt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if not is_admin(q.from_user.id):
+        await q.answer("अनुमति नहीं है", show_alert=True); return
+    await q.answer()
+    code = q.data.split(":", 1)[1]
+    order = get_order(code)
+    if not order:
+        await q.message.reply_text("ऑर्डर नहीं मिला।"); return
+    await _send_receipt_for_order(context.bot, q.from_user.id, order)
+
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    query = " ".join(context.args).strip() if context.args else ""
+    if not query:
+        await update.effective_message.reply_text("उपयोग: /search ORD-241028 या /search 2024-10-28")
+        return
+    with db() as c:
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", query):
+            sql = "SELECT * FROM orders WHERE created_at LIKE ?"
+            params = (query + "%",)
+            if not is_admin(user_id):
+                sql += " AND user_id=?"; params += (user_id,)
+            sql += " ORDER BY id DESC LIMIT 30"
+        else:
+            sql = "SELECT * FROM orders WHERE order_code LIKE ?"
+            params = ("%" + query[:80] + "%",)
+            if not is_admin(user_id):
+                sql += " AND user_id=?"; params += (user_id,)
+            sql += " ORDER BY id DESC LIMIT 30"
+        rows = c.execute(sql, params).fetchall()
+    if not rows:
+        await update.effective_message.reply_text("कोई matching order नहीं मिला।")
+        return
+    buttons = []
+    lines = [f"🔎 Search results: {len(rows)}"]
+    for row in rows:
+        lines.append(f"\n<code>{esc(row['order_code'])}</code> · {esc(row['service_name'])} · {money(row['amount'])} · {esc(row['created_at'])[:10]}")
+        prefix = "admin_order" if is_admin(user_id) else "order_detail"
+        buttons.append([InlineKeyboardButton(_button_label(row['order_code'] + " · खोलें", 60),
+                                             callback_data=f"{prefix}:{row['order_code']}")])
+    await update.effective_message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML,
+                                               reply_markup=InlineKeyboardMarkup(buttons))
+
+async def admin_direct_message_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if not is_admin(q.from_user.id):
+        await q.answer("अनुमति नहीं है", show_alert=True)
+        return
+    await q.answer()
+    code = q.data.split(":", 1)[1]
+    order = get_order(code)
+    if not order:
+        await q.edit_message_text("ऑर्डर नहीं मिला।")
+        return
+    context.user_data["admin_flow"] = "message_customer"
+    context.user_data["admin_target_order"] = code
+    await q.edit_message_text(
+        f"✉️ <b>सीधा संदेश</b>\nOrder: <code>{esc(code)}</code>\n"
+        f"ग्राहक ID: <code>{order['user_id']}</code>\n\n"
+        "ग्राहक को भेजने वाला संदेश लिखकर एक मैसेज में भेजें। रोकने के लिए /cancel करें।",
+        parse_mode=ParseMode.HTML)
+
+
+async def admin_request_docs_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if not is_admin(q.from_user.id):
+        await q.answer("अनुमति नहीं है", show_alert=True)
+        return
+    code = q.data.split(":", 1)[1]
+    await q.answer()
+    await _send_document_request_to_customer(update, context, code)
+
+
+async def _send_document_request_to_customer(update: Update, context: ContextTypes.DEFAULT_TYPE, code: str):
+    q = update.callback_query
+    order = get_order(code)
+    if not order:
+        await q.edit_message_text("ऑर्डर नहीं मिला।")
+        return
+    pay_label, paid = order_payment_summary(code)
+    doc_count, doc_label = order_document_summary(code)
+    message = (f"📄 <b>दस्तावेज़ की जरूरत — {esc(order['service_name'])}</b>\n"
+               f"Order ID: <code>{esc(code)}</code>\n\n"
+               "एडमिन ने इस काम के दस्तावेज़/अतिरिक्त जानकारी माँगी है। नीचे दिए बटन से भेजें।\n"
+               "OTP, पासवर्ड, UPI PIN या बैंक PIN न भेजें।")
+    sent = await safe_send(context.bot, order["user_id"], message, parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📄 इस ऑर्डर के दस्तावेज़ भेजें", callback_data=f"upload_docs:{code}")],
+            [InlineKeyboardButton("📍 काम की स्थिति", callback_data=f"order_detail:{code}")]]))
+    if sent:
+        audit(q.from_user.id, "DOCUMENTS_REQUESTED", code, f"payment={pay_label}; documents={doc_count}")
+        await q.edit_message_text(
+            f"✅ ग्राहक को दस्तावेज़ माँगने का संदेश भेजा गया।\nOrder: <code>{esc(code)}</code>\n"
+            f"भुगतान: {pay_label}\nदस्तावेज़: {doc_label} ({doc_count})",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔎 ऑर्डर खोलें", callback_data=f"admin_order:{code}")],
+                [InlineKeyboardButton("📄 ट्रैकर", callback_data="admin_list:DOCS")]]))
+    else:
+        await q.edit_message_text("❌ संदेश नहीं भेजा जा सका। ग्राहक ने बॉट शुरू न किया हो सकता है।")
+
+
+async def admin_request_docs_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if not is_admin(q.from_user.id):
+        await q.answer("अनुमति नहीं है", show_alert=True)
+        return
+    code = q.data.split(":", 1)[1]
+    order = get_order(code)
+    if not order:
+        await q.answer("ऑर्डर नहीं मिला", show_alert=True)
+        return
+    count, _ = order_document_summary(code)
+    if count > 0:
+        await q.answer()
+        await q.edit_message_text(
+            f"ℹ️ इस ऑर्डर पर पहले से {count} दस्तावेज़ मिल चुके हैं।\n"
+            "क्या ग्राहक से अतिरिक्त/दोबारा दस्तावेज़ माँगना है?",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ हाँ, फिर माँगें", callback_data=f"reqdocs_confirm:{code}")],
+                [InlineKeyboardButton("❌ रहने दें", callback_data=f"admin_order:{code}")]]))
+        return
+    await q.answer()
+    await _send_document_request_to_customer(update, context, code)
+
+
+async def archive_order_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    code = q.data.split(":", 1)[1]
+    order = get_order(code)
+    if not order:
+        await q.answer("ऑर्डर नहीं मिला", show_alert=True)
+        return
+    actor = q.from_user.id
+    admin = is_admin(actor)
+    if not admin and order["user_id"] != actor:
+        await q.answer("अनुमति नहीं है", show_alert=True)
+        return
+    with db() as c:
+        c.execute("""INSERT OR REPLACE INTO order_archives(order_code,archived_by,archived_at,reason)
+                     VALUES(?,?,?,?)""",
+                  (code, actor, now_iso(), "Hidden from pending list; history retained"))
+    audit(actor, "ORDER_ARCHIVED", code, "hidden from pending list; record retained")
+    await q.answer("रिकॉर्ड सुरक्षित रखते हुए Pending सूची से हटाया")
+    if admin:
+        await q.edit_message_text(
+            f"🗃️ <code>{esc(code)}</code> Pending सूची से छिपा दिया गया। भुगतान/दस्तावेज़/ऑडिट इतिहास सुरक्षित है।",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("♻️ Pending में वापस लाएँ", callback_data=f"unarchive_order:{code}")],
+                [InlineKeyboardButton("🔎 रिकॉर्ड खोलें", callback_data=f"admin_order:{code}")],
+                [InlineKeyboardButton("⬅️ Admin Menu", callback_data="admin_menu")]]))
+    else:
+        await q.edit_message_text(
+            f"🗃️ ऑर्डर <code>{esc(code)}</code> आपकी Pending सूची से छिपा दिया गया। रिकॉर्ड सुरक्षित है।",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("♻️ Pending में वापस लाएँ", callback_data=f"unarchive_order:{code}")],
+                [InlineKeyboardButton("📦 मेरे ऑर्डर", callback_data="my_orders")]]))
+
+
+async def unarchive_order_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    code = q.data.split(":", 1)[1]
+    order = get_order(code)
+    if not order:
+        await q.answer("ऑर्डर नहीं मिला", show_alert=True)
+        return
+    if not is_admin(q.from_user.id) and order["user_id"] != q.from_user.id:
+        await q.answer("अनुमति नहीं है", show_alert=True)
+        return
+    with db() as c:
+        c.execute("DELETE FROM order_archives WHERE order_code=?", (code,))
+    audit(q.from_user.id, "ORDER_UNARCHIVED", code, "restored to pending list")
+    await q.answer("रिकॉर्ड Pending सूची में वापस आया")
+    if is_admin(q.from_user.id):
+        await q.edit_message_text(
+            f"♻️ रिकॉर्ड <code>{esc(code)}</code> Pending सूची में वापस आ गया।",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔎 पूरा रिकॉर्ड", callback_data=f"admin_order:{code}")],
+                [InlineKeyboardButton("📄 भुगतान + दस्तावेज़ ट्रैकर", callback_data="admin_list:DOCS")]]))
+    else:
+        await q.edit_message_text(
+            f"♻️ ऑर्डर <code>{esc(code)}</code> आपकी सूची में वापस आ गया।",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📍 काम की स्थिति", callback_data=f"order_detail:{code}")],
+                [InlineKeyboardButton("📦 मेरे ऑर्डर", callback_data="my_orders")]]))
+
 
 async def admin_payment_view(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -1995,8 +2610,12 @@ async def payment_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
         customer = get_customer(pay["user_id"])
         receipt = create_receipt(order, customer["full_name"] if customer else "Customer", ref)
         await safe_send(context.bot, pay["user_id"],
-            f"🟢 भुगतान एडमिन द्वारा सत्यापित किया गया।\nOrder: <code>{esc(pay['order_code'])}</code>",
-            parse_mode=ParseMode.HTML)
+            f"🟢 भुगतान एडमिन द्वारा सत्यापित किया गया।\nOrder: <code>{esc(pay['order_code'])}</code>\n"
+            "अब नीचे बटन से इसी सर्विस के दस्तावेज़ सीधे भेज सकते हैं।",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📄 दस्तावेज़ भेजें — 1 टैप", callback_data=f"upload_docs:{pay['order_code']}")],
+                [InlineKeyboardButton("📍 काम की स्थिति", callback_data=f"order_detail:{pay['order_code']}")]]))
         if receipt:
             try:
                 await context.bot.send_document(pay["user_id"], receipt, caption="🧾 ऑर्डर रसीद")
@@ -2304,11 +2923,13 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🧰 सर्विस/फीस/दस्तावेज़ मैनेज करें", callback_data="admin_manage_services")],
+        [InlineKeyboardButton("📄 भुगतान + दस्तावेज़ ट्रैकर", callback_data="admin_list:DOCS")],
+        [InlineKeyboardButton("📭 Paid + दस्तावेज़ बाकी", callback_data="admin_list:DOCS_PAID_NO_DOC")],
         [InlineKeyboardButton("📦 Pending Orders", callback_data="admin_list:PENDING"),
          InlineKeyboardButton("📊 आज की रिपोर्ट", callback_data="admin_report:today")],
         [InlineKeyboardButton("⏰ Overdue", callback_data="admin_list:OVERDUE"),
          InlineKeyboardButton("📈 7 दिन की रिपोर्ट", callback_data="admin_report:7d")],
-        [InlineKeyboardButton("🧾 हाल के ऑर्डर", callback_data="admin_list:RECENT"),
+        [InlineKeyboardButton("🕘 पिछले 30 रिकॉर्ड", callback_data="admin_list:RECENT"),
          InlineKeyboardButton("🛡️ Security Log", callback_data="admin_security")],
         [InlineKeyboardButton("🏪 Business OS: Stock · Expense · P&L · CRM · SLA", callback_data="admin_biz_menu")],
         [InlineKeyboardButton("🧭 पहली बार दुकान सेटअप / चेकलिस्ट", callback_data="setup_wizard")],
@@ -2505,24 +3126,78 @@ async def admin_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     mode = q.data.split(":", 1)[1]
     with db() as c:
         if mode == "PENDING":
-            rows = c.execute("""SELECT * FROM orders WHERE status IN
-              ('PAYMENT_PENDING','PAYMENT_REVIEW','DOCS_PENDING','NEEDS_ADMIN','WAITING_CUSTOMER')
-              ORDER BY updated_at LIMIT 20""").fetchall()
+            rows = c.execute("""SELECT o.*,
+              COALESCE((SELECT p.status FROM payments p WHERE p.order_code=o.order_code ORDER BY p.id DESC LIMIT 1),'') AS latest_payment_status,
+              EXISTS(SELECT 1 FROM payments p WHERE p.order_code=o.order_code
+                     AND p.status IN ('VERIFIED_BY_ADMIN','AUTO_VERIFIED')) AS has_verified_payment,
+              (SELECT COUNT(*) FROM documents d WHERE d.order_code=o.order_code) AS document_count,
+              EXISTS(SELECT 1 FROM order_archives ax WHERE ax.order_code=o.order_code) AS is_archived
+              FROM orders o LEFT JOIN order_archives a ON a.order_code=o.order_code
+              WHERE a.order_code IS NULL AND o.status IN
+              ('PAYMENT_PENDING','PAYMENT_REVIEW','DOCS_PENDING','NEEDS_ADMIN','WAITING_CUSTOMER','PAID','IN_PROGRESS')
+              ORDER BY o.updated_at DESC LIMIT 30""").fetchall()
+        elif mode == "DOCS_PAID_NO_DOC":
+            rows = c.execute("""SELECT o.*,
+                COALESCE((SELECT p.status FROM payments p WHERE p.order_code=o.order_code ORDER BY p.id DESC LIMIT 1),'') AS latest_payment_status,
+                1 AS has_verified_payment,
+                0 AS document_count,
+                EXISTS(SELECT 1 FROM order_archives ax WHERE ax.order_code=o.order_code) AS is_archived
+                FROM orders o
+                WHERE EXISTS (SELECT 1 FROM payments p WHERE p.order_code=o.order_code
+                              AND p.status IN ('VERIFIED_BY_ADMIN','AUTO_VERIFIED'))
+                  AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.order_code=o.order_code)
+                  AND NOT EXISTS (SELECT 1 FROM order_archives ax WHERE ax.order_code=o.order_code)
+                  AND o.status NOT IN ('COMPLETED','CANCELLED','REFUNDED','REJECTED')
+                ORDER BY o.updated_at DESC, o.id DESC LIMIT 30""").fetchall()
         elif mode == "OVERDUE":
-            rows = c.execute("""SELECT * FROM orders WHERE due_at < ? AND status NOT IN
-              ('COMPLETED','CANCELLED','REFUNDED','REJECTED') ORDER BY due_at LIMIT 20""", (now_iso(),)).fetchall()
+            rows = c.execute("""SELECT o.*,
+              COALESCE((SELECT p.status FROM payments p WHERE p.order_code=o.order_code ORDER BY p.id DESC LIMIT 1),'') AS latest_payment_status,
+              EXISTS(SELECT 1 FROM payments p WHERE p.order_code=o.order_code
+                     AND p.status IN ('VERIFIED_BY_ADMIN','AUTO_VERIFIED')) AS has_verified_payment,
+              (SELECT COUNT(*) FROM documents d WHERE d.order_code=o.order_code) AS document_count,
+              EXISTS(SELECT 1 FROM order_archives ax WHERE ax.order_code=o.order_code) AS is_archived
+              FROM orders o LEFT JOIN order_archives a ON a.order_code=o.order_code
+              WHERE a.order_code IS NULL AND o.due_at < ? AND o.status NOT IN
+              ('COMPLETED','CANCELLED','REFUNDED','REJECTED') ORDER BY o.due_at LIMIT 30""",
+              (now_iso(),)).fetchall()
+        elif mode in {"DOCS", "RECENT"}:
+            rows = c.execute("""SELECT o.*,
+                COALESCE((SELECT p.status FROM payments p WHERE p.order_code=o.order_code ORDER BY p.id DESC LIMIT 1),'') AS latest_payment_status,
+                EXISTS(SELECT 1 FROM payments p WHERE p.order_code=o.order_code
+                       AND p.status IN ('VERIFIED_BY_ADMIN','AUTO_VERIFIED')) AS has_verified_payment,
+                (SELECT COUNT(*) FROM documents d WHERE d.order_code=o.order_code) AS document_count,
+                EXISTS(SELECT 1 FROM order_archives ax WHERE ax.order_code=o.order_code) AS is_archived
+                FROM orders o ORDER BY o.id DESC LIMIT 30""").fetchall()
         else:
-            rows = c.execute("SELECT * FROM orders ORDER BY id DESC LIMIT 20").fetchall()
+            rows = []
     if not rows:
         await q.edit_message_text("कोई रिकॉर्ड नहीं मिला।", reply_markup=InlineKeyboardMarkup(
             [[InlineKeyboardButton("⬅️ Admin Menu", callback_data="admin_menu")]]))
         return
-    lines = [f"<b>📋 {esc(mode)} — {len(rows)} तक</b>"]
+    title = {"DOCS": "भुगतान + दस्तावेज़ ट्रैकर",
+             "DOCS_PAID_NO_DOC": "भुगतान सत्यापित · दस्तावेज़ बाकी",
+             "RECENT": "पिछले 30 रिकॉर्ड",
+             "PENDING": "Pending Orders", "OVERDUE": "Overdue Orders"}.get(mode, mode)
+    lines = [f"<b>📋 {esc(title)} — {len(rows)} रिकॉर्ड तक</b>"]
     buttons = []
     for row in rows:
-        lines.append(f"\n<code>{esc(row['order_code'])}</code> · {esc(row['service_name'])}\n"
-                     f"{esc(ORDER_STATUSES.get(row['status'], row['status']))} · {money(row['amount'])}")
-        buttons.append([InlineKeyboardButton(row["order_code"], callback_data=f"admin_order:{row['order_code']}")])
+        pay_label, paid = order_payment_summary(row)
+        doc_count, doc_label = order_document_summary(row)
+        archived = order_is_archived(row)
+        lines.append(f"\n<code>{esc(row['order_code'])}</code> · {esc(row['service_name'])[:38]} · "
+                     f"ID <code>{row['user_id']}</code> · {money(row['amount'])}\n"
+                     f"{pay_label} · {doc_label} ({doc_count}) · "
+                     f"{esc(ORDER_STATUSES.get(row['status'], row['status']))}"
+                     + (" · 🗃️" if archived else ""))
+        if mode in {"DOCS", "DOCS_PAID_NO_DOC"} and paid and doc_count == 0:
+            label = f"📭 {row['order_code']} · दस्तावेज़ बाकी"
+        elif mode == "DOCS" and paid and doc_count:
+            label = f"📄 {row['order_code']} · दस्तावेज़ मिले"
+        else:
+            label = f"🔎 {row['order_code']} · {row['user_id']}"
+        buttons.append([InlineKeyboardButton(_button_label(label, 60),
+                                             callback_data=f"admin_order:{row['order_code']}")])
+    buttons.append([InlineKeyboardButton("🔄 ट्रैकर रीफ्रेश", callback_data=f"admin_list:{mode}")])
     buttons.append([InlineKeyboardButton("⬅️ Admin Menu", callback_data="admin_menu")])
     await q.edit_message_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons))
 
@@ -2608,10 +3283,71 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if not msg or not msg.text:
         return
-    register_customer(user)
     text = msg.text.strip()
+    if text in {"❌ रद्द करें", "/cancel"}:
+        had_flow = bool(context.user_data.get("admin_flow") or
+                        context.user_data.get("awaiting_document") or
+                        context.user_data.get("upload_order_code"))
+        for key in ("admin_flow", "admin_target_order", "admin_target_service",
+                    "admin_setting_key", "upload_order_code", "awaiting_document",
+                    "pending_proof_file"):
+            context.user_data.pop(key, None)
+        await msg.reply_text(
+            "अस्थायी प्रक्रिया रद्द हुई। पहले से बने ऑर्डर/भुगतान रिकॉर्ड नहीं मिटाए गए।"
+            if had_flow else "कोई अस्थायी प्रक्रिया चालू नहीं थी; पुराने रिकॉर्ड सुरक्षित हैं।",
+            reply_markup=reply_keyboard() if not is_admin(user.id) else None)
+        return
+    register_customer(user)
+    lower_text = text.casefold()
+    if not is_admin(user.id) and (
+        lower_text in {"📍 काम की स्थिति", "काम की स्थिति", "स्थिति", "status", "process"}
+        or any(term in lower_text for term in ("काम कहाँ", "काम kaha", "स्टेटस", "प्रोसेस", "कितना हुआ"))
+    ):
+        rows = pending_resume_rows(user.id, 8)
+        if rows:
+            buttons = [[InlineKeyboardButton(
+                f"📍 {r['order_code']} · {r['service_name'][:24]}",
+                callback_data=f"order_detail:{r['order_code']}")] for r in rows]
+            buttons.append([InlineKeyboardButton("📦 सभी ऑर्डर", callback_data="my_orders")])
+            await msg.reply_text("किस काम की स्थिति जाननी है? एक टैप में चुनें:",
+                                 reply_markup=InlineKeyboardMarkup(buttons))
+        else:
+            await msg.reply_text("कोई Pending काम नहीं मिला। पुराने रिकॉर्ड 📦 मेरे ऑर्डर में देखें。",
+                                 reply_markup=reply_keyboard())
+        return
     flow = context.user_data.get("admin_flow")
     if flow and is_admin(user.id):
+        if flow == "service_file":
+            await msg.reply_text(
+                "📎 कृपया इस सर्विस के लिए PDF या फोटो भेजें (text नहीं)।\n"
+                "प्रक्रिया रद्द करने के लिए ❌ रद्द करें या /cancel भेजें।",
+                parse_mode=ParseMode.HTML)
+            return
+        if flow == "message_customer":
+            code = context.user_data.get("admin_target_order")
+            order = get_order(code) if code else None
+            if not order:
+                context.user_data.pop("admin_flow", None)
+                context.user_data.pop("admin_target_order", None)
+                await msg.reply_text("ऑर्डर नहीं मिला। रिकॉर्ड फिर से खोलें।")
+                return
+            outgoing = text[:3500]
+            sent = await safe_send(context.bot, order["user_id"],
+                f"✉️ <b>दुकान/एडमिन का संदेश</b>\nOrder: <code>{esc(code)}</code>\n\n{esc(outgoing)}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📍 काम की स्थिति", callback_data=f"order_detail:{code}")],
+                    [InlineKeyboardButton("📄 दस्तावेज़ भेजें", callback_data=f"upload_docs:{code}")]]))
+            context.user_data.pop("admin_flow", None)
+            context.user_data.pop("admin_target_order", None)
+            if sent:
+                audit(user.id, "ADMIN_DIRECT_MESSAGE", code, outgoing[:500])
+                await msg.reply_text(f"✅ संदेश ग्राहक को भेज दिया गया। Order: {esc(code)}",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔎 रिकॉर्ड खोलें", callback_data=f"admin_order:{code}")]]))
+            else:
+                await msg.reply_text("❌ संदेश नहीं भेजा जा सका। ग्राहक ने बॉट शुरू न किया हो सकता है।")
+            return
         if flow == "setup_shop_name":
             value = text.strip()[:120]
             if len(value) < 2:
@@ -2996,7 +3732,19 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
         pass
 
 def main():
-    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
+    # A larger HTTP pool helps simultaneous user/admin replies. Bounded timeouts prevent
+    # one slow Telegram request from holding up the bot for too long.
+    app = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .post_init(post_init)
+        .connection_pool_size(16)
+        .connect_timeout(5.0)
+        .read_timeout(8.0)
+        .write_timeout(8.0)
+        .pool_timeout(5.0)
+        .build()
+    )
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("guide", guide_command))
@@ -3023,6 +3771,7 @@ def main():
     app.add_handler(CommandHandler("pnl", pnl_command))
     app.add_handler(CommandHandler("crm", crm_command))
     app.add_handler(CommandHandler("sla", sla_command))
+    app.add_handler(CommandHandler("search", search_command))
     app.add_handler(CommandHandler("paymentsetup", paymentsetup_command))
     app.add_handler(CommandHandler("gatewaylist", providers_command))
     app.add_handler(CommandHandler("providers", providers_command))
@@ -3036,10 +3785,23 @@ def main():
     app.add_handler(CallbackQueryHandler(toggle_urgent, pattern=r"^urgent:"))
     app.add_handler(CallbackQueryHandler(create_order_handler, pattern=r"^order:"))
     app.add_handler(CallbackQueryHandler(my_orders, pattern=r"^my_orders$"))
+    app.add_handler(CallbackQueryHandler(my_orders_docs_callback, pattern=r"^my_orders_docs$"))
     app.add_handler(CallbackQueryHandler(order_detail, pattern=r"^order_detail:"))
     app.add_handler(CallbackQueryHandler(upload_docs_prompt, pattern=r"^upload_docs:"))
+    app.add_handler(CallbackQueryHandler(finish_documents_callback, pattern=r"^finish_docs:"))
     app.add_handler(CallbackQueryHandler(attach_proof_callback, pattern=r"^attach_proof:"))
     app.add_handler(CallbackQueryHandler(admin_order_view, pattern=r"^admin_order:"))
+    app.add_handler(CallbackQueryHandler(my_documents_callback, pattern=r"^mydocs:"))
+    app.add_handler(CallbackQueryHandler(resend_documents_callback, pattern=r"^redocs:"))
+    app.add_handler(CallbackQueryHandler(user_receipt_callback, pattern=r"^receipt_user:"))
+    app.add_handler(CallbackQueryHandler(admin_receipt_callback, pattern=r"^receipt_admin:"))
+    app.add_handler(CallbackQueryHandler(payment_proof_re_view_callback, pattern=r"^(proof_user|proof_admin):"))
+    app.add_handler(CallbackQueryHandler(admin_view_documents_callback, pattern=r"^admin_docs:"))
+    app.add_handler(CallbackQueryHandler(admin_direct_message_callback, pattern=r"^admin_msg:"))
+    app.add_handler(CallbackQueryHandler(admin_request_docs_callback, pattern=r"^admin_reqdocs:"))
+    app.add_handler(CallbackQueryHandler(admin_request_docs_confirm_callback, pattern=r"^reqdocs_confirm:"))
+    app.add_handler(CallbackQueryHandler(archive_order_callback, pattern=r"^archive_order:"))
+    app.add_handler(CallbackQueryHandler(unarchive_order_callback, pattern=r"^unarchive_order:"))
     app.add_handler(CallbackQueryHandler(admin_payment_view, pattern=r"^admin_payment:"))
     app.add_handler(CallbackQueryHandler(payment_details_view, pattern=r"^paydetails:"))
     app.add_handler(CallbackQueryHandler(change_status_callback, pattern=r"^status:"))
