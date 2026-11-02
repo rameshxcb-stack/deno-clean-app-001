@@ -13,20 +13,68 @@ TURSO_URL = os.getenv("TURSO_DATABASE_URL").replace("libsql://", "https://")
 TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_USER_ID"))
 
-PAGE_SIZE = 15          # एक पेज पर कितनी सेवाएं दिखें
-CATS_PER_PAGE = 10      # एक पेज पर कितनी श्रेणियां दिखें
-SEARCH_PER_PAGE = 10    # सर्च रिजल्ट एक पेज पर कितने दिखें
+PAGE_SIZE = 15          # एक पेज पर सर्विस
+CATS_PER_PAGE = 10      # एक पेज पर श्रेणियां
+SEARCH_PER_PAGE = 10    # एक पेज पर सर्च रिजल्ट
 
+# ==========================================
+# 🛠️ LIBSQL CLIENT WRAPPER (एरर फिक्स करने के लिए)
+# ==========================================
+class RowDict:
+    def __init__(self, row, columns):
+        self._dict = dict(zip(columns, row))
+    def __getitem__(self, key):
+        return self._dict[key]
+    def get(self, key, default=None):
+        return self._dict.get(key, default)
+
+class CursorWrapper:
+    def __init__(self, result_set):
+        self.result = result_set
+        self._rows = []
+        self._idx = 0
+        if hasattr(result_set, 'rows') and hasattr(result_set, 'columns'):
+            cols = [c.name for c in result_set.columns]
+            for r in result_set.rows:
+                self._rows.append(RowDict(r, cols))
+
+    def fetchone(self):
+        if self._idx < len(self._rows):
+            row = self._rows[self._idx]
+            self._idx += 1
+            return row
+        return None
+
+    def fetchall(self):
+        rows = self._rows[self._idx:]
+        self._idx = len(self._rows)
+        return rows
+
+class DBWrapper:
+    def __init__(self, client):
+        self.client = client
+    def execute(self, query, params=None):
+        if params is None:
+            res = self.client.execute(query)
+        else:
+            res = self.client.execute(query, params)
+        return CursorWrapper(res)
+    def __enter__(self):
+        return self
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.client.close()
 
 def get_db():
-    return create_client_sync(url=TURSO_URL, auth_token=TURSO_TOKEN)
+    client = create_client_sync(url=TURSO_URL, auth_token=TURSO_TOKEN)
+    return DBWrapper(client)
+# ==========================================
 
 
 def trunc(s, n=45):
     return s if len(s) <= n else s[:n-3] + "..."
 
 
-# ============ डेटाबेस सेटअप ============
+# ============ INIT / MIGRATION ============
 def init_db():
     with get_db() as db:
         db.execute("""CREATE TABLE IF NOT EXISTS categories (
@@ -62,8 +110,8 @@ def init_db():
     with get_db() as db:
         orphans = db.execute("SELECT COUNT(*) as c FROM services WHERE category_id IS NULL").fetchone()['c']
         if orphans > 0:
-            db.execute("INSERT OR IGNORE INTO categories (name) VALUES ('📦 अन्य सेवाएं')")
-            cat = db.execute("SELECT id FROM categories WHERE name='📦 अन्य सेवाएं'").fetchone()
+            db.execute("INSERT OR IGNORE INTO categories (name) VALUES ('📦 अन्य')")
+            cat = db.execute("SELECT id FROM categories WHERE name='📦 अन्य'").fetchone()
             db.execute("UPDATE services SET category_id=? WHERE category_id IS NULL", [cat['id']])
 
 
@@ -108,11 +156,11 @@ def clear_user_state(user_id):
         db.execute("DELETE FROM user_state WHERE user_id=?", [user_id])
 
 
-# ============ ग्राहक (User) वाला हिस्सा ============
+# ============ USER SIDE ============
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if user.id == ADMIN_ID:
-        await update.message.reply_text("🛠️ एडमिन पैनल में आपका स्वागत है।\nसेवाएं जोड़ने या बदलने के लिए /admin दबाएं।")
+        await update.message.reply_text("🛠️ एडमिन पैनल में स्वागत है।\n/admin दबाएं।")
         return
     save_user(user)
     clear_user_state(user.id)
@@ -130,8 +178,8 @@ async def send_categories(target, page=0, edit=False):
     cats = [c for c in cats if c['cnt'] > 0]
 
     if not cats:
-        txt = ("🙏 नमस्ते!\n\nअभी कोई सेवा उपलब्ध नहीं है।\n"
-               "आप अपनी जरूरत यहाँ सीधे मैसेज करके बता सकते हैं, हमारी टीम आपसे संपर्क करेगी।")
+        txt = ("🙏 स्वागत है!\n\nअभी कोई सर्विस उपलब्ध नहीं है।\n"
+               "आप सीधे मैसेज कर सकते हैं, एडमिन जवाब देंगे।")
         if edit: await target.edit_message_text(txt)
         else: await target.reply_text(txt)
         return
@@ -141,7 +189,6 @@ async def send_categories(target, page=0, edit=False):
     page = max(0, min(page, total_pages - 1))
     page_cats = cats[page * CATS_PER_PAGE:(page + 1) * CATS_PER_PAGE]
 
-    # 🔥 2 बटन एक लाइन में (Landscape Layout) - बिना नाम काटे
     kb = []
     row = []
     for c in page_cats:
@@ -153,7 +200,6 @@ async def send_categories(target, page=0, edit=False):
     if row: 
         kb.append(row)
 
-    # आगे-पीछे जाने वाले बटन
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("⬅️ पिछला", callback_data=f"ucats_{page-1}"))
@@ -162,12 +208,11 @@ async def send_categories(target, page=0, edit=False):
     if nav:
         kb.append(nav)
 
-    # नीचे के बटन
-    kb.append([InlineKeyboardButton("🔍 सेवा खोजें (Search)", callback_data="u_search")])
+    kb.append([InlineKeyboardButton("🔍 सर्विस खोजें", callback_data="u_search")])
     kb.append([InlineKeyboardButton("💬 सीधे मैसेज करें", callback_data="u_help")])
 
-    txt = (f"🙏 <b>नमस्ते! हमारी सेवाओं में आपका स्वागत है।</b>\n\n"
-           f"👇 <b>नीचे दिए गए विकल्पों में से सेवा चुनें:</b> (पेज {page+1}/{total_pages})")
+    txt = (f"🙏 <b>स्वागत है!</b>\n\n"
+           f"👇 <b>सर्विस चुनें:</b> (पेज {page+1}/{total_pages})")
     if edit:
         await target.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
     else:
@@ -178,12 +223,12 @@ async def show_category_page(query, cat_id, page):
     with get_db() as db:
         cat = db.execute("SELECT * FROM categories WHERE id=?", [cat_id]).fetchone()
         if not cat:
-            await query.edit_message_text("क्षमा करें, यह श्रेणी नहीं मिली।")
+            await query.edit_message_text("श्रेणी नहीं मिली।")
             return
         total = db.execute("SELECT COUNT(*) as c FROM services WHERE category_id=? AND is_active=1",
                            [cat_id]).fetchone()['c']
         if total == 0:
-            await query.edit_message_text("इस श्रेणी में अभी कोई सेवा उपलब्ध नहीं है।")
+            await query.edit_message_text("इस श्रेणी में कोई सर्विस नहीं है।")
             return
         rows = db.execute("SELECT * FROM services WHERE category_id=? AND is_active=1 ORDER BY id LIMIT ? OFFSET ?",
                           [cat_id, PAGE_SIZE, page * PAGE_SIZE]).fetchall()
@@ -192,18 +237,18 @@ async def show_category_page(query, cat_id, page):
     
     msg = f"📁 <b>{cat['name']}</b>  ({page+1}/{total_pages})\n\n"
     for row in rows:
-        msg += f"🔹 <b>{row['name']}</b>\n💰 फीस: ₹{row['price']}\n📄 जरूरी दस्तावेज़: {row['docs']}\n\n"
+        msg += f"🔹 <b>{row['name']}</b> — ₹{row['price']}\n   📄 {row['docs']}\n\n"
 
     kb = []
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("⬅️ पिछला", callback_data=f"ucat_{cat_id}_{page-1}"))
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"ucat_{cat_id}_{page-1}"))
     if (page + 1) * PAGE_SIZE < total:
-        nav.append(InlineKeyboardButton("अगला ➡️", callback_data=f"ucat_{cat_id}_{page+1}"))
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"ucat_{cat_id}_{page+1}"))
     if nav:
         kb.append(nav)
-    kb.append([InlineKeyboardButton("🔍 सेवा खोजें", callback_data="u_search")])
-    kb.append([InlineKeyboardButton("🔙 मुख्य पेज पर जाएं", callback_data="u_cats")])
+    kb.append([InlineKeyboardButton("🔍 सर्विस खोजें", callback_data="u_search")])
+    kb.append([InlineKeyboardButton("🔙 श्रेणियों पर", callback_data="u_cats")])
 
     await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
@@ -211,7 +256,7 @@ async def show_category_page(query, cat_id, page):
 async def show_search_results(target, query_text, page=0, edit=True):
     query_text = (query_text or "").strip()
     if not query_text:
-        txt = "कृपया कुछ लिखकर सर्च करें।"
+        txt = "कुछ टाइप करें।"
         if edit: await target.edit_message_text(txt)
         else: await target.reply_text(txt)
         return
@@ -224,9 +269,9 @@ async def show_search_results(target, query_text, page=0, edit=True):
                               AND (s.name LIKE ? OR s.docs LIKE ?)""",
                            [like, like]).fetchone()['c']
         if total == 0:
-            kb = [[InlineKeyboardButton("🔍 दोबारा खोजें", callback_data="u_search")],
-                  [InlineKeyboardButton("🔙 मुख्य पेज पर जाएं", callback_data="u_cats")]]
-            txt = f"🔍 '<b>{query_text}</b>' के लिए कोई सेवा नहीं मिली।\n\nकृपया कोई दूसरा शब्द आज़माएं।"
+            kb = [[InlineKeyboardButton("🔍 नई खोज", callback_data="u_search")],
+                  [InlineKeyboardButton("🔙 श्रेणियों पर", callback_data="u_cats")]]
+            txt = f"🔍 '<b>{query_text}</b>' के लिए कोई सर्विस नहीं मिली।\n\nदूसरा शब्द आज़माएं।"
             if edit:
                 await target.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
             else:
@@ -240,21 +285,21 @@ async def show_search_results(target, query_text, page=0, edit=True):
                           [like, like, SEARCH_PER_PAGE, page * SEARCH_PER_PAGE]).fetchall()
 
     total_pages = (total + SEARCH_PER_PAGE - 1) // SEARCH_PER_PAGE
-    msg = f"🔍 <b>'{query_text}'</b> के लिए {total} परिणाम मिले (पेज {page+1}/{total_pages})\n\n"
+    msg = f"🔍 <b>'{query_text}'</b> — {total} परिणाम (पेज {page+1}/{total_pages})\n\n"
     for row in rows:
         cat = row['cat_name'] or "—"
-        msg += f"🔹 <b>{row['name']}</b>\n💰 फीस: ₹{row['price']}\n📁 {cat} · 📄 {row['docs']}\n\n"
+        msg += f"🔹 <b>{row['name']}</b> — ₹{row['price']}\n   📁 {cat} · 📄 {row['docs']}\n\n"
 
     kb = []
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("⬅️ पिछला", callback_data=f"usearch_{page-1}"))
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"usearch_{page-1}"))
     if (page + 1) * SEARCH_PER_PAGE < total:
-        nav.append(InlineKeyboardButton("अगला ➡️", callback_data=f"usearch_{page+1}"))
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"usearch_{page+1}"))
     if nav:
         kb.append(nav)
-    kb.append([InlineKeyboardButton("🔍 नई खोज करें", callback_data="u_search")])
-    kb.append([InlineKeyboardButton("🔙 मुख्य पेज पर जाएं", callback_data="u_cats")])
+    kb.append([InlineKeyboardButton("🔍 नई खोज", callback_data="u_search")])
+    kb.append([InlineKeyboardButton("🔙 श्रेणियों पर", callback_data="u_cats")])
 
     if edit:
         await target.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
@@ -262,22 +307,22 @@ async def show_search_results(target, query_text, page=0, edit=True):
         await target.reply_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
 
-# ============ एडमिन (Admin) वाला हिस्सा ============
+# ============ ADMIN SIDE ============
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
     with get_db() as db:
         db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-    await update.message.reply_text("🛠️ <b>एडमिन पैनल</b>\nआप क्या करना चाहेंगे?",
+    await update.message.reply_text("🛠️ <b>एडमिन पैनल</b>\nक्या करना है?",
                                     reply_markup=admin_kb(), parse_mode="HTML")
 
 
 def admin_kb():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ नई सर्विस जोड़ें", callback_data="add_service")],
-        [InlineKeyboardButton("📦 एक साथ कई सर्विस जोड़ें (Bulk)", callback_data="bulk_add")],
-        [InlineKeyboardButton("📁 श्रेणियां (Categories) मैनेज करें", callback_data="cat_menu")],
-        [InlineKeyboardButton("📋 सभी सर्विस की लिस्ट देखें", callback_data="svclist_0")],
-        [InlineKeyboardButton("👥 यूजर्स की लिस्ट (चैट के लिए)", callback_data="show_users")],
+        [InlineKeyboardButton("📦 बल्क सर्विस जोड़ें", callback_data="bulk_add")],
+        [InlineKeyboardButton("📁 श्रेणियां प्रबंधित करें", callback_data="cat_menu")],
+        [InlineKeyboardButton("📋 सभी सर्विस देखें", callback_data="svclist_0")],
+        [InlineKeyboardButton("👥 यूजर्स की लिस्ट", callback_data="show_users")],
     ])
 
 
@@ -286,10 +331,10 @@ async def users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with get_db() as db:
         rows = db.execute("SELECT user_id, name FROM users ORDER BY last_seen DESC").fetchall()
     if not rows:
-        await update.message.reply_text("अभी तक किसी यूजर ने मैसेज नहीं किया है।")
+        await update.message.reply_text("अभी किसी यूजर ने मैसेज नहीं किया।")
         return
     kb = [[InlineKeyboardButton(f"👤 {row['name'] or 'User'}", callback_data=f"rep_{row['user_id']}")] for row in rows[:30]]
-    await update.message.reply_text(f"👥 <b>कुल यूजर्स ({len(rows)})</b>\nजिसे जवाब देना है उस पर टैप करें:",
+    await update.message.reply_text(f"👥 <b>सभी यूजर्स ({len(rows)})</b>",
                                     reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
 
@@ -297,10 +342,10 @@ async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
     with get_db() as db:
         db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-    await update.message.reply_text("✅ आपका पिछला काम रद्द कर दिया गया है। दोबारा शुरू करने के लिए /admin दबाएं।")
+    await update.message.reply_text("✅ रद्द किया गया। /admin")
 
 
-# ---- श्रेणी (Category) मैनेजमेंट ----
+# ---- Category Management ----
 async def show_cat_menu(query):
     with get_db() as db:
         cats = db.execute("""SELECT c.id, c.name, c.is_active, COUNT(s.id) as cnt
@@ -313,8 +358,8 @@ async def show_cat_menu(query):
         kb.append([InlineKeyboardButton(f"{status} {trunc(c['name'], 30)} ({c['cnt']})",
                                         callback_data=f"cat_view_{c['id']}")])
     kb.append([InlineKeyboardButton("➕ नई श्रेणी जोड़ें", callback_data="cat_add")])
-    kb.append([InlineKeyboardButton("🔙 पीछे जाएं", callback_data="back_admin")])
-    await query.edit_message_text(f"📁 <b>आपकी श्रेणियां ({len(cats)})</b>\nकिसी श्रेणी को बदलने के लिए उस पर टैप करें:",
+    kb.append([InlineKeyboardButton("🔙 वापस", callback_data="back_admin")])
+    await query.edit_message_text(f"📁 <b>श्रेणियां ({len(cats)})</b>\nप्रबंधित करने के लिए टैप करें:",
                                   reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
 
@@ -329,23 +374,23 @@ async def show_cat_card(query, cat_id):
                          [cat_id]).fetchone()['c']
 
     status = "✅ चालू" if cat['is_active'] else "⛔ बंद"
-    toggle = "⛔ श्रेणी को बंद करें" if cat['is_active'] else "✅ श्रेणी को चालू करें"
+    toggle = "⛔ श्रेणी बंद करें" if cat['is_active'] else "✅ श्रेणी चालू करें"
     txt = (f"📁 <b>{cat['name']}</b>\n\n"
-           f"कुल सर्विस: {cnt}\nचालू सर्विस: {act}\nस्थिति: {status}")
+           f"कुल सर्विस: {cnt}\nचालू: {act}\nस्थिति: {status}")
     kb = [
         [InlineKeyboardButton("✏️ नाम बदलें", callback_data=f"cat_ren_{cat_id}")],
         [InlineKeyboardButton(toggle, callback_data=f"cat_tog_{cat_id}")],
-        [InlineKeyboardButton("🔙 पीछे जाएं", callback_data="cat_menu")],
+        [InlineKeyboardButton("🔙 वापस", callback_data="cat_menu")],
     ]
     await query.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
 
-# ---- सर्विस लिस्ट / कार्ड ----
+# ---- Service List / Card ----
 async def show_service_list_page(query, page):
     with get_db() as db:
         total = db.execute("SELECT COUNT(*) as c FROM services").fetchone()['c']
         if total == 0:
-            await query.edit_message_text("अभी कोई सर्विस नहीं है।")
+            await query.edit_message_text("कोई सर्विस नहीं है।")
             return
         rows = db.execute("SELECT * FROM services ORDER BY category_id, id LIMIT ? OFFSET ?",
                           [PAGE_SIZE, page * PAGE_SIZE]).fetchall()
@@ -353,13 +398,13 @@ async def show_service_list_page(query, page):
                                 callback_data=f"svc_{r['id']}")] for r in rows]
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("⬅️ पिछला", callback_data=f"svclist_{page-1}"))
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"svclist_{page-1}"))
     if (page + 1) * PAGE_SIZE < total:
-        nav.append(InlineKeyboardButton("अगला ➡️", callback_data=f"svclist_{page+1}"))
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"svclist_{page+1}"))
     if nav:
         kb.append(nav)
-    kb.append([InlineKeyboardButton("🔙 पीछे जाएं", callback_data="back_admin")])
-    await query.edit_message_text(f"📋 <b>सभी सर्विस</b> (कुल {total}) — पेज {page+1}:",
+    kb.append([InlineKeyboardButton("🔙 वापस", callback_data="back_admin")])
+    await query.edit_message_text(f"📋 <b>सभी सर्विस</b> ({total}) — पेज {page+1}:",
                                   reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
 
@@ -375,18 +420,18 @@ async def show_service_card(query, sid):
         status, toggle = "✅ चालू", "⛔ डिसेबल करें"
     else:
         status, toggle = "⛔ बंद", "✅ इनेबल करें"
-    txt = f"<b>{row['name']}</b>\n📁 श्रेणी: {cat_name}\n💰 फीस: ₹{row['price']}\n📄 दस्तावेज़: {row['docs']}\n\nस्थिति: {status}"
+    txt = f"<b>{row['name']}</b>\n📁 {cat_name}\n💰 ₹{row['price']}\n📄 {row['docs']}\n\nस्थिति: {status}"
     kb = [
-        [InlineKeyboardButton("✏️ नाम बदलें", callback_data=f"ef_name_{sid}"),
-         InlineKeyboardButton("💰 फीस बदलें", callback_data=f"ef_price_{sid}")],
-        [InlineKeyboardButton("📄 दस्तावेज़ बदलें", callback_data=f"ef_docs_{sid}")],
+        [InlineKeyboardButton("✏️ नाम", callback_data=f"ef_name_{sid}"),
+         InlineKeyboardButton("💰 फीस", callback_data=f"ef_price_{sid}")],
+        [InlineKeyboardButton("📄 दस्तावेज़", callback_data=f"ef_docs_{sid}")],
         [InlineKeyboardButton(toggle, callback_data=f"tog_{sid}")],
-        [InlineKeyboardButton("🔙 लिस्ट पर वापस", callback_data="svclist_0")],
+        [InlineKeyboardButton("🔙 लिस्ट पर", callback_data="svclist_0")],
     ]
     await query.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
 
-# ---- बल्क (Bulk) पार्सर ----
+# ---- Bulk Parser ----
 def parse_bulk(text):
     lines = [l.strip() for l in text.strip().split('\n') if l.strip() and not l.strip().startswith('//')]
     result, errors = [], []
@@ -398,15 +443,15 @@ def parse_bulk(text):
                 errors.append(f"खाली श्रेणी: {line[:40]}")
             continue
         if '|' not in line:
-            errors.append(f"'|' नहीं मिला: {line[:40]}")
+            errors.append(f"'|' गायब: {line[:40]}")
             continue
         parts = [p.strip() for p in line.split('|')]
         if len(parts) < 2:
-            errors.append(f"नाम और फीस जरूरी है: {line[:40]}")
+            errors.append(f"नाम+फीस चाहिए: {line[:40]}")
             continue
         name = parts[0]
         if not name:
-            errors.append(f"नाम खाली है: {line[:40]}")
+            errors.append(f"खाली नाम: {line[:40]}")
             continue
         try:
             price = int(parts[1])
@@ -419,27 +464,27 @@ def parse_bulk(text):
     return result, errors
 
 
-# ============ बटन क्लिक हैंडलर ============
+# ============ BUTTON HANDLER ============
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
 
-    # ---- ग्राहक (USER) के बटन ----
+    # ---- USER ----
     if data == "u_cats":
         clear_user_state(query.from_user.id)
         await send_categories(query, page=0, edit=True); return
     if data == "u_help":
         clear_user_state(query.from_user.id)
         await query.edit_message_text(
-            "💬 आप अपना सवाल या जरूरत यहाँ टाइप करके भेज सकते हैं। हमारी टीम जल्द ही आपसे संपर्क करेगी।",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 मुख्य पेज पर जाएं", callback_data="u_cats")]]))
+            "💬 अपना सवाल यहाँ टाइप करके भेजें। एडमिन जवाब देंगे।",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 श्रेणियों पर", callback_data="u_cats")]]))
         return
     if data == "u_search":
         set_user_state(query.from_user.id, 'search_wait', None)
         await query.edit_message_text(
-            "🔍 आप किस सेवा को खोजना चाहते हैं? उसका नाम नीचे लिखकर भेजें:\n\n"
-            "उदाहरण: <code>PAN</code>, <code>आधार</code>, <code>शादी</code>",
+            "🔍 जिस सर्विस का नाम खोजना है वह टाइप करें:\n\n"
+            "उदाहरण: <code>PAN</code>, <code>Aadhaar</code>, <code>शादी</code>",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ रद्द करें", callback_data="u_cats")]]),
             parse_mode="HTML")
         return
@@ -456,11 +501,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if st and st['step'] == 'search_done' and st['data']:
             await show_search_results(query, st['data'], page=page, edit=True)
         else:
-            await query.edit_message_text("सर्च का समय समाप्त हो गया है। कृपया फिर से खोजें।",
-                                          reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔍 दोबारा खोजें", callback_data="u_search")]]))
+            await query.edit_message_text("सत्र समाप्त। फिर से खोजें।",
+                                          reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔍 नई खोज", callback_data="u_search")]]))
         return
 
-    # ---- एडमिन (ADMIN) के बटन ----
+    # ---- ADMIN ONLY ----
     if query.from_user.id != ADMIN_ID: return
 
     if data == "back_admin":
@@ -472,7 +517,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "cat_add":
         with get_db() as db:
             db.execute("INSERT OR REPLACE INTO admin_state VALUES (?, 'new_cat', '{}')", [ADMIN_ID])
-        await query.edit_message_text("📁 नई श्रेणी का नाम क्या रखना है?\n\n💡 <i>नोट: नाम के आगे इमोजी जरूर लगाएं (जैसे: 💳 पैन कार्ड)</i>", parse_mode="HTML"); return
+        await query.edit_message_text("📁 नई श्रेणी का नाम भेजें:\n\n💡 <i>नोट: इमोजी के साथ नाम लिखें, जैसे: 💳 पैन कार्ड</i>", parse_mode="HTML"); return
     if data.startswith("cat_view_"):
         await show_cat_card(query, int(data.split("_")[2])); return
     if data.startswith("cat_ren_"):
@@ -480,7 +525,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with get_db() as db:
             db.execute("INSERT OR REPLACE INTO admin_state VALUES (?, 'edit_cat', ?)",
                        [ADMIN_ID, json.dumps({"id": cid})])
-        await query.edit_message_text("✏️ श्रेणी का नया नाम क्या रखना है?"); return
+        await query.edit_message_text("✏️ नया श्रेणी नाम भेजें:"); return
     if data.startswith("cat_tog_"):
         cid = int(data.split("_")[2])
         with get_db() as db:
@@ -491,34 +536,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with get_db() as db:
             db.execute("INSERT OR REPLACE INTO admin_state VALUES (?, 'bulk_add', '{}')", [ADMIN_ID])
         help_txt = (
-            "📦 <b>एक साथ कई सर्विस जोड़ें</b>\n\n"
-            "नीचे दिए गए फॉर्मेट में टेक्स्ट कॉपी करके पेस्ट करें (हर लाइन में एक सर्विस):\n\n"
+            "📦 <b>बल्क सर्विस जोड़ें</b>\n\n"
+            "फॉर्मेट — हर लाइन एक सर्विस:\n\n"
             "<code># श्रेणी का नाम\n"
-            "सर्विस का नाम | फीस | दस्तावेज़\n"
-            "पैन कार्ड | 150 | आधार, फोटो\n"
-            "आधार अपडेट | 100 | आधार कॉपी</code>\n\n"
-            "• <code># श्रेणी</code> से श्रेणी तय होगी (नहीं लिखा तो 'अन्य' में जाएगा)\n"
-            "• फीस में सिर्फ नंबर लिखें, 0 से बड़ा होना चाहिए\n"
-            "• दस्तावेज़ लिखना जरूरी नहीं है\n"
-            "• <code>|</code> (पाइप) का इस्तेमाल करना जरूरी है\n"
-            "• एक बार में 30-40 सर्विस भेज सकते हैं\n\n"
-            "अब अपना टेक्स्ट भेजें:"
+            "सर्विस | फीस | दस्तावेज़\n"
+            "PAN Card | 150 | Aadhaar, Photo\n"
+            "Aadhaar Update | 100 | Aadhaar Copy</code>\n\n"
+            "• <code># श्रेणी</code> से श्रेणी (नहीं लिखा तो 'अन्य')\n"
+            "• फीस सिर्फ नंबर, 0 से बड़ी\n"
+            "• दस्तावेज़ वैकल्पिक · <code>|</code> जरूरी\n"
+            "• एक बार में 30-40 सर्विस\n\n"
+            "अब टेक्स्ट भेजें:"
         )
         await query.edit_message_text(help_txt, parse_mode="HTML"); return
     if data == "add_service":
         with get_db() as db:
             cats = db.execute("SELECT id, name FROM categories WHERE is_active=1 ORDER BY sort_order, name").fetchall()
         if not cats:
-            await query.edit_message_text("पहले एक श्रेणी बनाएं।")
+            await query.edit_message_text("पहले श्रेणी बनाएं।")
             return
         kb = [[InlineKeyboardButton(f"📁 {trunc(c['name'], 28)}", callback_data=f"asel_{c['id']}")] for c in cats]
-        await query.edit_message_text("यह सर्विस किस श्रेणी में जोड़नी है?", reply_markup=InlineKeyboardMarkup(kb)); return
+        await query.edit_message_text("किस श्रेणी में जोड़नी है?", reply_markup=InlineKeyboardMarkup(kb)); return
     if data.startswith("asel_"):
         cid = int(data.split("_")[1])
         with get_db() as db:
             db.execute("INSERT OR REPLACE INTO admin_state VALUES (?, 'name', ?)",
                        [ADMIN_ID, json.dumps({"cat_id": cid})])
-        await query.edit_message_text("सर्विस का नाम क्या रखना है? (उदा. पैन कार्ड अप्लाई)"); return
+        await query.edit_message_text("सर्विस का नाम भेजें:"); return
     if data.startswith("svclist_"):
         await show_service_list_page(query, int(data.split("_")[1])); return
     if data.startswith("svc_"):
@@ -535,7 +579,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with get_db() as db:
             db.execute("INSERT OR REPLACE INTO admin_state VALUES (?, ?, ?)",
                        [ADMIN_ID, f"edit_{field}", json.dumps({"id": sid})])
-        prompts = {"name": "✏️ सर्विस का नया नाम भेजें:", "price": "💰 नई फीस क्या रखनी है? (सिर्फ नंबर में):", "docs": "📄 कौन से दस्तावेज़ जरूरी होंगे? (जैसे: आधार, फोटो):"}
+        prompts = {"name": "✏️ नया नाम भेजें:", "price": "💰 नई फीस (नंबर):", "docs": "📄 दस्तावेज़ भेजें:"}
         await query.edit_message_text(prompts[field]); return
     if data.startswith("rep_"):
         tid = int(data.split("_")[1])
@@ -549,28 +593,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with get_db() as db:
             rows = db.execute("SELECT user_id, name FROM users ORDER BY last_seen DESC").fetchall()
         if not rows:
-            await query.edit_message_text("अभी किसी यूजर ने मैसेज नहीं किया है।")
+            await query.edit_message_text("अभी किसी यूजर ने मैसेज नहीं किया।")
             return
         kb = [[InlineKeyboardButton(f"👤 {row['name'] or 'User'}", callback_data=f"rep_{row['user_id']}")] for row in rows[:30]]
-        kb.append([InlineKeyboardButton("🔙 पीछे जाएं", callback_data="back_admin")])
-        await query.edit_message_text(f"👥 यूजर्स की लिस्ट ({len(rows)}):", reply_markup=InlineKeyboardMarkup(kb)); return
+        kb.append([InlineKeyboardButton("🔙 वापस", callback_data="back_admin")])
+        await query.edit_message_text(f"👥 यूजर्स ({len(rows)}):", reply_markup=InlineKeyboardMarkup(kb)); return
 
 
-# ============ टेक्स्ट मैसेज हैंडलर ============
+# ============ TEXT HANDLER ============
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = update.message.text
     msg = update.message
 
     if user.id == ADMIN_ID:
-        # पुराना तरीका (नोटिफिकेशन पर रिप्लाई)
         if msg.reply_to_message and msg.reply_to_message.text and "User ID:" in msg.reply_to_message.text:
             try:
                 tid = int(msg.reply_to_message.text.split("User ID: ")[1].split("\n")[0].strip())
             except Exception:
-                await msg.reply_text("❌ User ID पढ़ने में दिक्कत आ रही है।"); return
+                await msg.reply_text("❌ User ID नहीं पढ़ा।"); return
             await context.bot.send_message(chat_id=tid, text=f"👨‍💼 <b>एडमिन:</b>\n{text}", parse_mode="HTML")
-            await msg.reply_text(f"✅ जवाब भेज दिया गया → {user_display(tid)}"); return
+            await msg.reply_text(f"✅ भेजा → {user_display(tid)}"); return
 
         with get_db() as db:
             state = db.execute("SELECT * FROM admin_state WHERE admin_id=?", [ADMIN_ID]).fetchone()
@@ -584,33 +627,30 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(chat_id=tid, text=f"👨‍💼 <b>एडमिन:</b>\n{text}", parse_mode="HTML")
                 with get_db() as db:
                     db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-                await msg.reply_text(f"✅ जवाब भेज दिया गया → {user_display(tid)}\n\nबाकी यूजर्स को जवाब देने के लिए /users दबाएं।"); return
-            
+                await msg.reply_text(f"✅ भेजा → {user_display(tid)}\n\nबाकी के लिए /users"); return
             if step == 'new_cat':
                 if len(text) > 50:
-                    await msg.reply_text("❌ श्रेणी का नाम 50 अक्षरों से बड़ा नहीं होना चाहिए।"); return
+                    await msg.reply_text("❌ 50 अक्षर तक ही रखें।"); return
                 with get_db() as db:
                     if db.execute("SELECT id FROM categories WHERE name=?", [text]).fetchone():
-                        await msg.reply_text("❌ यह नाम पहले से मौजूद है।"); return
+                        await msg.reply_text("❌ नाम मौजूद है।"); return
                     db.execute("INSERT INTO categories (name) VALUES (?)", [text])
                     db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-                await msg.reply_text(f"✅ नई श्रेणी '{text}' जोड़ दी गई है।"); return
-            
+                await msg.reply_text(f"✅ श्रेणी '{text}' बनी।"); return
             if step == 'edit_cat':
                 if len(text) > 50:
-                    await msg.reply_text("❌ श्रेणी का नाम 50 अक्षरों से बड़ा नहीं होना चाहिए।"); return
+                    await msg.reply_text("❌ 50 अक्षर तक ही रखें।"); return
                 with get_db() as db:
                     db.execute("UPDATE categories SET name=? WHERE id=?", [text, temp['id']])
                     db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-                await msg.reply_text("✅ श्रेणी का नाम बदल दिया गया है।"); return
-            
+                await msg.reply_text("✅ श्रेणी नाम बदला।"); return
             if step == 'bulk_add':
                 items, errors = parse_bulk(text)
                 if not items and not errors:
-                    await msg.reply_text("❌ कोई भी सही लाइन नहीं मिली। कृपया फॉर्मेट चेक करें।"); return
+                    await msg.reply_text("❌ कोई वैध लाइन नहीं।"); return
                 added, cats = 0, set()
                 for cat_name, name, price, docs in items:
-                    cat = cat_name if cat_name else "📦 अन्य सेवाएं"
+                    cat = cat_name if cat_name else "📦 अन्य"
                     cid = get_or_create_category(cat)
                     with get_db() as db:
                         db.execute("INSERT INTO services (name, price, docs, category_id, is_active) VALUES (?, ?, ?, ?, 1)",
@@ -618,65 +658,59 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     added += 1; cats.add(cat)
                 with get_db() as db:
                     db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-                r = f"✅ <b>{added} सर्विस सफलतापूर्वक जोड़ दी गईं</b>\n📁 श्रेणियां: {', '.join(sorted(cats))}\n"
+                r = f"✅ <b>{added} सर्विस जोड़ी गईं</b>\n📁 {', '.join(sorted(cats))}\n"
                 if errors:
-                    r += f"\n⚠️ {len(errors)} लाइनें छोड़ दी गईं क्योंकि उनमें गलती थी:\n"
+                    r += f"\n⚠️ {len(errors)} लाइन छोड़ी:\n"
                     for e in errors[:10]: r += f"• {e}\n"
-                    if len(errors) > 10: r += f"...और {len(errors)-10} गलतियां\n"
+                    if len(errors) > 10: r += f"...और {len(errors)-10}\n"
                 await msg.reply_text(r, parse_mode="HTML"); return
-            
             if step == 'name':
                 temp['name'] = text
                 with get_db() as db:
                     db.execute("UPDATE admin_state SET step='price', temp_data=? WHERE admin_id=?",
                                [json.dumps(temp), ADMIN_ID])
-                await msg.reply_text("💰 इसकी फीस कितनी है? (सिर्फ नंबर में लिखें):"); return
-            
+                await msg.reply_text("💰 फीस (सिर्फ नंबर):"); return
             if step == 'price':
                 try:
                     temp['price'] = int(text)
                     if temp['price'] <= 0: raise ValueError
                 except ValueError:
-                    await msg.reply_text("❌ गलत फीस। कृपया सिर्फ नंबर लिखें (0 से बड़ा):"); return
+                    await msg.reply_text("❌ नंबर, 0 से बड़ा:"); return
                 with get_db() as db:
                     db.execute("UPDATE admin_state SET step='docs', temp_data=? WHERE admin_id=?",
                                [json.dumps(temp), ADMIN_ID])
-                await msg.reply_text("📄 इसके लिए कौन-कौन से दस्तावेज़ चाहिए? (जैसे: आधार कार्ड, फोटो):"); return
-            
+                await msg.reply_text("📄 दस्तावेज़:"); return
             if step == 'docs':
                 with get_db() as db:
                     db.execute("INSERT INTO services (name, price, docs, category_id, is_active) VALUES (?, ?, ?, ?, 1)",
                                [temp['name'], temp['price'], text, temp['cat_id']])
                     db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-                await msg.reply_text("✅ नई सर्विस जोड़ दी गई है!"); return
-            
+                await msg.reply_text("✅ जोड़ दी गई!"); return
             if step == 'edit_name':
                 with get_db() as db:
                     db.execute("UPDATE services SET name=? WHERE id=?", [text, temp['id']])
                     db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-                await msg.reply_text("✅ सर्विस का नाम अपडेट हो गया है।"); return
-            
+                await msg.reply_text("✅ नाम अपडेट।"); return
             if step == 'edit_price':
                 try:
                     np = int(text)
                     if np <= 0: raise ValueError
                 except ValueError:
-                    await msg.reply_text("❌ गलत फीस। कृपया सिर्फ नंबर लिखें:"); return
+                    await msg.reply_text("❌ नंबर, 0 से बड़ा:"); return
                 with get_db() as db:
                     db.execute("UPDATE services SET price=? WHERE id=?", [np, temp['id']])
                     db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-                await msg.reply_text("✅ फीस अपडेट हो गई है।"); return
-            
+                await msg.reply_text("✅ फीस अपडेट।"); return
             if step == 'edit_docs':
                 with get_db() as db:
                     db.execute("UPDATE services SET docs=? WHERE id=?", [text, temp['id']])
                     db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-                await msg.reply_text("✅ दस्तावेज़ अपडेट हो गए हैं।"); return
+                await msg.reply_text("✅ दस्तावेज़ अपडेट।"); return
             return
 
-        await msg.reply_text("🤖 माफी, मैं समझ नहीं पाया।\n\n• सर्विस जोड़ने के लिए /admin दबाएं\n• यूजर्स को जवाब देने के लिए /users दबाएं"); return
+        await msg.reply_text("🤖 समझ नहीं आया।\n/admin · /users · किसी नोटिफिकेशन पर Reply"); return
 
-    # ---- ग्राहक (USER) का मैसेज ----
+    # ---- USER ----
     st = get_user_state(user.id)
     if st and st['step'] == 'search_wait':
         set_user_state(user.id, 'search_done', text)
@@ -686,14 +720,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_user(user)
     await context.bot.send_message(
         chat_id=ADMIN_ID,
-        text=(f"💬 <b>नया मैसेज आया है</b>\n👤 {user.first_name or 'User'}"
+        text=(f"💬 <b>नया मैसेज</b>\n👤 {user.first_name or 'User'}"
               + (f" (@{user.username})" if user.username else "") +
-              f"\n🆔 User ID: {user.id}\n\n{text}"),
+              f"\n🆔 {user.id}\n\n{text}"),
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("↩️ जवाब दें", callback_data=f"rep_{user.id}")
         ]]))
-    await msg.reply_text("✅ आपका मैसेज हमें मिल गया है। हम जल्द ही आपसे संपर्क करेंगे।")
+    await msg.reply_text("✅ मैसेज एडमिन को भेज दिया।")
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -703,15 +737,15 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_user(user)
         await context.bot.send_message(
             chat_id=ADMIN_ID,
-            text=(f"📁 <b>नई फाइल/फोटो प्राप्त हुई</b>\n👤 {user.first_name or 'User'}"
+            text=(f"📁 <b>फाइल</b>\n👤 {user.first_name or 'User'}"
                   + (f" (@{user.username})" if user.username else "") +
-                  f"\n🆔 User ID: {user.id}"),
+                  f"\n🆔 {user.id}"),
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("↩️ जवाब दें", callback_data=f"rep_{user.id}")
             ]]))
         await msg.forward(chat_id=ADMIN_ID)
-        await msg.reply_text("✅ आपकी फाइल हमें मिल गई है।")
+        await msg.reply_text("✅ फाइल भेज दी गई।")
 
 
 def main():
@@ -724,7 +758,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_document))
-    print("बॉट चालू हो गया है...")
+    print("बॉट चालू...")
     app.run_polling(drop_pending_updates=True)
 
 
