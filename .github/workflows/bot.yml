@@ -1,10 +1,8 @@
 name: Cyber Cafe Telegram Bot
 
 on:
-  # GitHub ka apna cron job - har 1 ghante (60 min) me khud chalega
   schedule:
     - cron: "0 * * * *"
-  # Manual trigger ya cron-job.org se trigger karne ke liye
   workflow_dispatch:
 
 permissions:
@@ -17,14 +15,20 @@ concurrency:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    # 65m wala command safely complete ho, isliye 70 min ka job-level timeout.
     timeout-minutes: 70
     env:
       BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
       TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
       TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      
+      # 🔽 यहाँ हमने GitHub के plural सेक्रेट को Singular variable में मैप कर दिया है
+      ADMIN_USER_ID: ${{ secrets.ADMIN_USER_IDS }}
+      OWNER_USER_ID: ${{ secrets.OWNER_USER_IDS }}
+      
+      # पुराने वाले भी रहने दें (अगर कोड में कहीं और इस्तेमाल हो रहे हों)
       ADMIN_USER_IDS: ${{ secrets.ADMIN_USER_IDS }}
       OWNER_USER_IDS: ${{ secrets.OWNER_USER_IDS }}
+      
       ADMIN_CHAT_ID: ${{ secrets.ADMIN_CHAT_ID }}
       ADMIN_ALERT_CHAT_ID: ${{ secrets.ADMIN_ALERT_CHAT_ID }}
       UPI_ID: ${{ secrets.UPI_ID }}
@@ -56,31 +60,25 @@ jobs:
       - name: Validate required secrets
         shell: bash
         run: |
-          for name in BOT_TOKEN TURSO_DATABASE_URL TURSO_AUTH_TOKEN; do
+          # यहाँ भी हमने ADMIN_USER_ID चेक करने के लिए सेट कर दिया है
+          for name in BOT_TOKEN TURSO_DATABASE_URL TURSO_AUTH_TOKEN ADMIN_USER_ID; do
             if [ -z "${!name}" ]; then
               echo "::error::Missing required GitHub Actions secret: $name"
               exit 1
             fi
           done
-          if [ -z "$ADMIN_USER_IDS" ] && [ -z "$OWNER_USER_IDS" ]; then
-            echo "::warning::No admin/owner IDs configured. Admin controls may be unavailable."
-          fi
 
       - name: Check Python syntax
-        # Yahan aapki file ka sahi naam cyber_cafe_bot.py kar diya gaya hai
         run: python -m py_compile cyber_cafe_bot.py
 
       - name: Run Telegram bot (65 min, graceful shutdown)
         shell: bash
         run: |
           set +e
-          # File ka naam cyber_cafe_bot.py kar diya gaya hai
           timeout --signal=INT --kill-after=30s 65m python -u cyber_cafe_bot.py
           rc=$?
-          # 124=timeout, 130=SIGINT, 143=SIGTERM → ye planned stop hai, failure nahi
           if [ "$rc" -eq 124 ] || [ "$rc" -eq 130 ] || [ "$rc" -eq 143 ]; then
             echo "Bot stopped at the planned 65-minute runtime limit (graceful)."
             exit 0
           fi
-          # Baaki koi bhi exit code real failure hai — job RED dikhegi
           exit "$rc"
