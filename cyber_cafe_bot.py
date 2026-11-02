@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import asyncio
 from datetime import datetime, timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
@@ -27,12 +28,10 @@ class CursorWrapper:
         self._idx = 0
         
         rows = getattr(result_set, 'rows', []) or []
-        # libsql_client में columns सीधे string की लिस्ट होते हैं
         columns = getattr(result_set, 'columns', []) or []
         
         for r in rows:
             if columns and len(columns) == len(r):
-                # डिक्शनरी बनाएं ताकि row['name'] जैसा एक्सेस काम करे
                 self._rows.append(dict(zip(columns, r)))
             else:
                 self._rows.append(r) 
@@ -729,22 +728,83 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.reply_text("✅ मैसेज एडमिन को भेज दिया।")
 
 
+# ============ DOCUMENT HANDLER (Updated for Media Groups) ============
+admin_header_cache = {}
+user_confirm_cache = {}
+
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     msg = update.message
-    if user.id != ADMIN_ID:
-        save_user(user)
+    
+    # अगर एडमिन ने फाइल भेजी है तो कुछ न करें
+    if user.id == ADMIN_ID: 
+        return
+
+    save_user(user)
+    
+    # 1. फाइल को तुरंत एडमिन को फॉरवर्ड करें
+    await msg.forward(chat_id=ADMIN_ID)
+
+    # 2. एडमिन को हेडर भेजने का लॉजिक (हर नए बैच के लिए सिर्फ 1 बार)
+    media_group_id = msg.media_group_id
+    
+    if media_group_id:
+        group_key = f"{user.id}_{media_group_id}"
+        
+        # अगर इस बैच का हेडर नहीं गया है, तो भेजें
+        if group_key not in admin_header_cache:
+            admin_header_cache[group_key] = True
+            
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=(f"📁 <b>नई फाइल(ें) प्राप्त हुईं</b>\n"
+                      f"👤 {user.first_name or 'User'}"
+                      + (f" (@{user.username})" if user.username else "") +
+                      f"\n🆔 {user.id}"),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("↩️ जवाब दें", callback_data=f"rep_{user.id}")
+                ]])
+            )
+            
+            # 15 सेकंड बाद कैश साफ करें ताकि अगर वही यूजर बाद में फिर फाइलें भेजे तो नया हेडर बने
+            async def clear_admin_cache():
+                await asyncio.sleep(15)
+                if group_key in admin_header_cache:
+                    del admin_header_cache[group_key]
+            asyncio.create_task(clear_admin_cache())
+    else:
+        # अगर सिंगल फाइल भेजी गई है
         await context.bot.send_message(
             chat_id=ADMIN_ID,
-            text=(f"📁 <b>फाइल</b>\n👤 {user.first_name or 'User'}"
+            text=(f"📁 <b>नई फाइल प्राप्त हुई</b>\n"
+                  f"👤 {user.first_name or 'User'}"
                   + (f" (@{user.username})" if user.username else "") +
                   f"\n🆔 {user.id}"),
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("↩️ जवाब दें", callback_data=f"rep_{user.id}")
-            ]]))
-        await msg.forward(chat_id=ADMIN_ID)
-        await msg.reply_text("✅ फाइल भेज दी गई।")
+            ]])
+        )
+
+    # 3. यूजर को कन्फर्मेशन भेजने का लॉजिक (सिर्फ एक बार)
+    # अगर यूजर पहले से फाइल भेज रहा है, तो उसका पुराना टाइमर रद्द करें
+    if user.id in user_confirm_cache and user_confirm_cache[user.id]:
+        user_confirm_cache[user.id].cancel()
+    
+    async def send_user_confirmation():
+        try:
+            # 2 सेकंड रुकें ताकि अगर यूजर और फाइल भेज रहा है तो वो आ जाए
+            await asyncio.sleep(2.0) 
+            await context.bot.send_message(
+                chat_id=user.id, 
+                text="✅ आपकी सभी फाइलें एडमिन को भेज दी गई हैं।"
+            )
+        except asyncio.CancelledError:
+            pass
+            
+    # नया टाइमर शुरू करें
+    user_confirm_cache[user.id] = asyncio.create_task(send_user_confirmation())
 
 
 def main():
