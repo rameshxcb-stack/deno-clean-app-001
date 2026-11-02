@@ -9,34 +9,33 @@ from libsql_client import create_client_sync
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-TURSO_URL = os.getenv("TURSO_DATABASE_URL").replace("libsql://", "https://")
+TURSO_URL = os.getenv("TURSO_DATABASE_URL", "").replace("libsql://", "https://")
 TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_USER_ID"))
+ADMIN_ID = int(os.getenv("ADMIN_USER_ID", "0"))
 
 PAGE_SIZE = 15          # एक पेज पर सर्विस
 CATS_PER_PAGE = 10      # एक पेज पर श्रेणियां
 SEARCH_PER_PAGE = 10    # एक पेज पर सर्च रिजल्ट
 
 # ==========================================
-# 🛠️ LIBSQL CLIENT WRAPPER (एरर फिक्स करने के लिए)
+# 🛠️ TURSO LIBRARY FIX (क्रैश रोकने के लिए)
 # ==========================================
-class RowDict:
-    def __init__(self, row, columns):
-        self._dict = dict(zip(columns, row))
-    def __getitem__(self, key):
-        return self._dict[key]
-    def get(self, key, default=None):
-        return self._dict.get(key, default)
-
 class CursorWrapper:
     def __init__(self, result_set):
         self.result = result_set
         self._rows = []
         self._idx = 0
-        if hasattr(result_set, 'rows') and hasattr(result_set, 'columns'):
-            cols = [c.name for c in result_set.columns]
-            for r in result_set.rows:
-                self._rows.append(RowDict(r, cols))
+        
+        rows = getattr(result_set, 'rows', []) or []
+        # libsql_client में columns सीधे string की लिस्ट होते हैं
+        columns = getattr(result_set, 'columns', []) or []
+        
+        for r in rows:
+            if columns and len(columns) == len(r):
+                # डिक्शनरी बनाएं ताकि row['name'] जैसा एक्सेस काम करे
+                self._rows.append(dict(zip(columns, r)))
+            else:
+                self._rows.append(r) 
 
     def fetchone(self):
         if self._idx < len(self._rows):
