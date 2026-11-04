@@ -14,15 +14,6 @@ TURSO_URL = os.getenv("TURSO_DATABASE_URL", "").replace("libsql://", "https://")
 TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_USER_ID", "0"))
 
-# ============ FIX 1: Env Validation ============
-if not BOT_TOKEN:
-    raise SystemExit("❌ BOT_TOKEN सेट नहीं है")
-if not TURSO_URL or not TURSO_TOKEN:
-    raise SystemExit("❌ TURSO_DATABASE_URL / TURSO_AUTH_TOKEN सेट नहीं है")
-if not ADMIN_ID:
-    raise SystemExit("❌ ADMIN_USER_ID सेट नहीं है (अपना Telegram numeric ID डालें — /myid से देखें)")
-# ==============================================
-
 PAGE_SIZE = 15          # एक पेज पर सर्विस
 CATS_PER_PAGE = 10      # एक पेज पर श्रेणियां
 SEARCH_PER_PAGE = 10    # एक पेज पर सर्च रिजल्ट
@@ -174,16 +165,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_categories(update.message, page=0, edit=False)
 
 
-# ============ FIX 2: /myid command ============
-async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    u = update.effective_user
-    await update.message.reply_text(
-        f"🆔 आपका Telegram numeric ID:\n<code>{u.id}</code>\n\n"
-        "इसे GitHub Secrets में <code>ADMIN_USER_ID</code> के रूप में रखें।",
-        parse_mode="HTML")
-# ================================================
-
-
 async def send_categories(target, page=0, edit=False):
     with get_db() as db:
         cats = db.execute("""SELECT c.id, c.name, COUNT(s.id) as cnt
@@ -254,7 +235,8 @@ async def show_category_page(query, cat_id, page):
     
     msg = f"📁 <b>{cat['name']}</b>  ({page+1}/{total_pages})\n\n"
     for row in rows:
-        msg += f"🔹 <b>{row['name']}</b> — ₹{row['price']}\n   📄 {row['docs']}\n\n"
+        msg += f"🔹 <b>{row['name']}</b> — ₹{row['price']}\n"
+        msg += f"📄 <b>दस्तावेज़:</b>\n{row['docs']}\n\n"
 
     kb = []
     nav = []
@@ -305,7 +287,9 @@ async def show_search_results(target, query_text, page=0, edit=True):
     msg = f"🔍 <b>'{query_text}'</b> — {total} परिणाम (पेज {page+1}/{total_pages})\n\n"
     for row in rows:
         cat = row['cat_name'] or "—"
-        msg += f"🔹 <b>{row['name']}</b> — ₹{row['price']}\n   📁 {cat} · 📄 {row['docs']}\n\n"
+        msg += f"🔹 <b>{row['name']}</b> — ₹{row['price']}\n"
+        msg += f"📁 {cat}\n"
+        msg += f"📄 <b>दस्तावेज़:</b>\n{row['docs']}\n\n"
 
     kb = []
     nav = []
@@ -340,6 +324,7 @@ def admin_kb():
         [InlineKeyboardButton("📁 श्रेणियां प्रबंधित करें", callback_data="cat_menu")],
         [InlineKeyboardButton("📋 सभी सर्विस देखें", callback_data="svclist_0")],
         [InlineKeyboardButton("👥 यूजर्स की लिस्ट", callback_data="show_users")],
+        [InlineKeyboardButton("🗑️ सभी सर्विस डिलीट करें", callback_data="del_all_services")], # 👈 नया बटन
     ])
 
 
@@ -411,7 +396,7 @@ async def show_service_list_page(query, page):
             return
         rows = db.execute("SELECT * FROM services ORDER BY category_id, id LIMIT ? OFFSET ?",
                           [PAGE_SIZE, page * PAGE_SIZE]).fetchall()
-    kb = [[InlineKeyboardButton(f"{'✅' if r['is_active'] else '⛔'} {trunc(r['name'], 25)} — ₹{r['price']}",
+    kb = [[InlineKeyboardButton(f"{'✅' if r['is_active'] else '⛔'} {trunc(r['name'], 35)} — ₹{r['price']}",
                                 callback_data=f"svc_{r['id']}")] for r in rows]
     nav = []
     if page > 0:
@@ -470,8 +455,9 @@ def parse_bulk(text):
         if not name:
             errors.append(f"खाली नाम: {line[:40]}")
             continue
+        price_str = parts[1].replace('₹', '').replace('Rs', '').replace(',', '').strip()
         try:
-            price = int(parts[1])
+            price = int(float(price_str))
             if price <= 0: raise ValueError
         except ValueError:
             errors.append(f"गलत फीस: {line[:40]}")
@@ -482,370 +468,4 @@ def parse_bulk(text):
 
 
 # ============ BUTTON HANDLER ============
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-
-    # ---- USER ----
-    if data == "u_cats":
-        clear_user_state(query.from_user.id)
-        await send_categories(query, page=0, edit=True); return
-    if data == "u_help":
-        clear_user_state(query.from_user.id)
-        await query.edit_message_text(
-            "💬 अपना सवाल यहाँ टाइप करके भेजें। एडमिन जवाब देंगे।",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 श्रेणियों पर", callback_data="u_cats")]]))
-        return
-    if data == "u_search":
-        set_user_state(query.from_user.id, 'search_wait', None)
-        await query.edit_message_text(
-            "🔍 जिस सर्विस का नाम खोजना है वह टाइप करें:\n\n"
-            "उदाहरण: <code>PAN</code>, <code>Aadhaar</code>, <code>शादी</code>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ रद्द करें", callback_data="u_cats")]]),
-            parse_mode="HTML")
-        return
-    if data == "noop":
-        return
-    if data.startswith("ucats_"):
-        await send_categories(query, page=int(data.split("_")[1]), edit=True); return
-    if data.startswith("ucat_"):
-        p = data.split("_")
-        await show_category_page(query, int(p[1]), int(p[2])); return
-    if data.startswith("usearch_"):
-        page = int(data.split("_")[1])
-        st = get_user_state(query.from_user.id)
-        if st and st['step'] == 'search_done' and st['data']:
-            await show_search_results(query, st['data'], page=page, edit=True)
-        else:
-            await query.edit_message_text("सत्र समाप्त। फिर से खोजें।",
-                                          reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔍 नई खोज", callback_data="u_search")]]))
-        return
-
-    # ---- ADMIN ONLY ----
-    if query.from_user.id != ADMIN_ID: return
-
-    if data == "back_admin":
-        with get_db() as db:
-            db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-        await query.edit_message_text("🛠️ <b>एडमिन पैनल</b>", reply_markup=admin_kb(), parse_mode="HTML"); return
-    if data == "cat_menu":
-        await show_cat_menu(query); return
-    if data == "cat_add":
-        with get_db() as db:
-            db.execute("INSERT OR REPLACE INTO admin_state VALUES (?, 'new_cat', '{}')", [ADMIN_ID])
-        await query.edit_message_text("📁 नई श्रेणी का नाम भेजें:\n\n💡 <i>नोट: इमोजी के साथ नाम लिखें, जैसे: 💳 पैन कार्ड</i>", parse_mode="HTML"); return
-    if data.startswith("cat_view_"):
-        await show_cat_card(query, int(data.split("_")[2])); return
-    if data.startswith("cat_ren_"):
-        cid = int(data.split("_")[2])
-        with get_db() as db:
-            db.execute("INSERT OR REPLACE INTO admin_state VALUES (?, 'edit_cat', ?)",
-                       [ADMIN_ID, json.dumps({"id": cid})])
-        await query.edit_message_text("✏️ नया श्रेणी नाम भेजें:"); return
-    if data.startswith("cat_tog_"):
-        cid = int(data.split("_")[2])
-        with get_db() as db:
-            row = db.execute("SELECT is_active FROM categories WHERE id=?", [cid]).fetchone()
-            db.execute("UPDATE categories SET is_active=? WHERE id=?", [0 if row['is_active'] else 1, cid])
-        await show_cat_card(query, cid); return
-    if data == "bulk_add":
-        with get_db() as db:
-            db.execute("INSERT OR REPLACE INTO admin_state VALUES (?, 'bulk_add', '{}')", [ADMIN_ID])
-        help_txt = (
-            "📦 <b>बल्क सर्विस जोड़ें</b>\n\n"
-            "फॉर्मेट — हर लाइन एक सर्विस:\n\n"
-            "<code># श्रेणी का नाम\n"
-            "सर्विस | फीस | दस्तावेज़\n"
-            "PAN Card | 150 | Aadhaar, Photo\n"
-            "Aadhaar Update | 100 | Aadhaar Copy</code>\n\n"
-            "• <code># श्रेणी</code> से श्रेणी (नहीं लिखा तो 'अन्य')\n"
-            "• फीस सिर्फ नंबर, 0 से बड़ी\n"
-            "• दस्तावेज़ वैकल्पिक · <code>|</code> जरूरी\n"
-            "• एक बार में 30-40 सर्विस\n\n"
-            "अब टेक्स्ट भेजें:"
-        )
-        await query.edit_message_text(help_txt, parse_mode="HTML"); return
-    if data == "add_service":
-        with get_db() as db:
-            cats = db.execute("SELECT id, name FROM categories WHERE is_active=1 ORDER BY sort_order, name").fetchall()
-        if not cats:
-            await query.edit_message_text("पहले श्रेणी बनाएं।")
-            return
-        kb = [[InlineKeyboardButton(f"📁 {trunc(c['name'], 28)}", callback_data=f"asel_{c['id']}")] for c in cats]
-        await query.edit_message_text("किस श्रेणी में जोड़नी है?", reply_markup=InlineKeyboardMarkup(kb)); return
-    if data.startswith("asel_"):
-        cid = int(data.split("_")[1])
-        with get_db() as db:
-            db.execute("INSERT OR REPLACE INTO admin_state VALUES (?, 'name', ?)",
-                       [ADMIN_ID, json.dumps({"cat_id": cid})])
-        await query.edit_message_text("सर्विस का नाम भेजें:"); return
-    if data.startswith("svclist_"):
-        await show_service_list_page(query, int(data.split("_")[1])); return
-    if data.startswith("svc_"):
-        await show_service_card(query, int(data.split("_")[1])); return
-    if data.startswith("tog_"):
-        sid = int(data.split("_")[1])
-        with get_db() as db:
-            row = db.execute("SELECT is_active FROM services WHERE id=?", [sid]).fetchone()
-            db.execute("UPDATE services SET is_active=? WHERE id=?", [0 if row['is_active'] else 1, sid])
-        await show_service_card(query, sid); return
-    if data.startswith("ef_"):
-        p = data.split("_")
-        field, sid = p[1], int(p[2])
-        with get_db() as db:
-            db.execute("INSERT OR REPLACE INTO admin_state VALUES (?, ?, ?)",
-                       [ADMIN_ID, f"edit_{field}", json.dumps({"id": sid})])
-        prompts = {"name": "✏️ नया नाम भेजें:", "price": "💰 नई फीस (नंबर):", "docs": "📄 दस्तावेज़ भेजें:"}
-        await query.edit_message_text(prompts[field]); return
-    if data.startswith("rep_"):
-        tid = int(data.split("_")[1])
-        with get_db() as db:
-            db.execute("INSERT OR REPLACE INTO admin_state VALUES (?, 'reply', ?)",
-                       [ADMIN_ID, json.dumps({"target": tid})])
-        try: await query.edit_message_reply_markup(reply_markup=None)
-        except: pass
-        await query.message.reply_text(f"✍️ <b>{user_display(tid)}</b> को जवाब लिखें:", parse_mode="HTML"); return
-    if data == "show_users":
-        with get_db() as db:
-            rows = db.execute("SELECT user_id, name FROM users ORDER BY last_seen DESC").fetchall()
-        if not rows:
-            await query.edit_message_text("अभी किसी यूजर ने मैसेज नहीं किया।")
-            return
-        kb = [[InlineKeyboardButton(f"👤 {row['name'] or 'User'}", callback_data=f"rep_{row['user_id']}")] for row in rows[:30]]
-        kb.append([InlineKeyboardButton("🔙 वापस", callback_data="back_admin")])
-        await query.edit_message_text(f"👥 यूजर्स ({len(rows)}):", reply_markup=InlineKeyboardMarkup(kb)); return
-
-
-# ============ TEXT HANDLER ============
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    text = update.message.text
-    msg = update.message
-
-    if user.id == ADMIN_ID:
-        # FIX 3: Notification header अब "User ID:" के साथ आता है, इसलिए reply-parse काम करेगा
-        if msg.reply_to_message and msg.reply_to_message.text and "User ID:" in msg.reply_to_message.text:
-            try:
-                tid = int(msg.reply_to_message.text.split("User ID: ")[1].split("\n")[0].strip())
-            except Exception:
-                await msg.reply_text("❌ User ID नहीं पढ़ा।"); return
-            await context.bot.send_message(chat_id=tid, text=f"👨‍💼 <b>एडमिन:</b>\n{text}", parse_mode="HTML")
-            await msg.reply_text(f"✅ भेजा → {user_display(tid)}"); return
-
-        with get_db() as db:
-            state = db.execute("SELECT * FROM admin_state WHERE admin_id=?", [ADMIN_ID]).fetchone()
-
-        if state:
-            step = state['step']
-            temp = json.loads(state['temp_data'] or '{}')
-
-            if step == 'reply':
-                tid = temp['target']
-                await context.bot.send_message(chat_id=tid, text=f"👨‍💼 <b>एडमिन:</b>\n{text}", parse_mode="HTML")
-                with get_db() as db:
-                    db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-                await msg.reply_text(f"✅ भेजा → {user_display(tid)}\n\nबाकी के लिए /users"); return
-            if step == 'new_cat':
-                if len(text) > 50:
-                    await msg.reply_text("❌ 50 अक्षर तक ही रखें।"); return
-                with get_db() as db:
-                    if db.execute("SELECT id FROM categories WHERE name=?", [text]).fetchone():
-                        await msg.reply_text("❌ नाम मौजूद है।"); return
-                    db.execute("INSERT INTO categories (name) VALUES (?)", [text])
-                    db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-                await msg.reply_text(f"✅ श्रेणी '{text}' बनी।"); return
-            if step == 'edit_cat':
-                if len(text) > 50:
-                    await msg.reply_text("❌ 50 अक्षर तक ही रखें।"); return
-                with get_db() as db:
-                    db.execute("UPDATE categories SET name=? WHERE id=?", [text, temp['id']])
-                    db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-                await msg.reply_text("✅ श्रेणी नाम बदला।"); return
-            if step == 'bulk_add':
-                items, errors = parse_bulk(text)
-                if not items and not errors:
-                    await msg.reply_text("❌ कोई वैध लाइन नहीं।"); return
-                added, cats = 0, set()
-                for cat_name, name, price, docs in items:
-                    cat = cat_name if cat_name else "📦 अन्य"
-                    cid = get_or_create_category(cat)
-                    with get_db() as db:
-                        db.execute("INSERT INTO services (name, price, docs, category_id, is_active) VALUES (?, ?, ?, ?, 1)",
-                                   [name, price, docs, cid])
-                    added += 1; cats.add(cat)
-                with get_db() as db:
-                    db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-                r = f"✅ <b>{added} सर्विस जोड़ी गईं</b>\n📁 {', '.join(sorted(cats))}\n"
-                if errors:
-                    r += f"\n⚠️ {len(errors)} लाइन छोड़ी:\n"
-                    for e in errors[:10]: r += f"• {e}\n"
-                    if len(errors) > 10: r += f"...और {len(errors)-10}\n"
-                await msg.reply_text(r, parse_mode="HTML"); return
-            if step == 'name':
-                temp['name'] = text
-                with get_db() as db:
-                    db.execute("UPDATE admin_state SET step='price', temp_data=? WHERE admin_id=?",
-                               [json.dumps(temp), ADMIN_ID])
-                await msg.reply_text("💰 फीस (सिर्फ नंबर):"); return
-            if step == 'price':
-                try:
-                    temp['price'] = int(text)
-                    if temp['price'] <= 0: raise ValueError
-                except ValueError:
-                    await msg.reply_text("❌ नंबर, 0 से बड़ा:"); return
-                with get_db() as db:
-                    db.execute("UPDATE admin_state SET step='docs', temp_data=? WHERE admin_id=?",
-                               [json.dumps(temp), ADMIN_ID])
-                await msg.reply_text("📄 दस्तावेज़:"); return
-            if step == 'docs':
-                with get_db() as db:
-                    db.execute("INSERT INTO services (name, price, docs, category_id, is_active) VALUES (?, ?, ?, ?, 1)",
-                               [temp['name'], temp['price'], text, temp['cat_id']])
-                    db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-                await msg.reply_text("✅ जोड़ दी गई!"); return
-            if step == 'edit_name':
-                with get_db() as db:
-                    db.execute("UPDATE services SET name=? WHERE id=?", [text, temp['id']])
-                    db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-                await msg.reply_text("✅ नाम अपडेट।"); return
-            if step == 'edit_price':
-                try:
-                    np = int(text)
-                    if np <= 0: raise ValueError
-                except ValueError:
-                    await msg.reply_text("❌ नंबर, 0 से बड़ा:"); return
-                with get_db() as db:
-                    db.execute("UPDATE services SET price=? WHERE id=?", [np, temp['id']])
-                    db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-                await msg.reply_text("✅ फीस अपडेट।"); return
-            if step == 'edit_docs':
-                with get_db() as db:
-                    db.execute("UPDATE services SET docs=? WHERE id=?", [text, temp['id']])
-                    db.execute("DELETE FROM admin_state WHERE admin_id=?", [ADMIN_ID])
-                await msg.reply_text("✅ दस्तावेज़ अपडेट।"); return
-            return
-
-        await msg.reply_text("🤖 समझ नहीं आया।\n/admin · /users · किसी नोटिफिकेशन पर Reply"); return
-
-    # ---- USER ----
-    st = get_user_state(user.id)
-    if st and st['step'] == 'search_wait':
-        set_user_state(user.id, 'search_done', text)
-        await show_search_results(msg, text, page=0, edit=False)
-        return
-
-    save_user(user)
-    # FIX 3: notification header में "User ID:" जोड़ा, ताकि admin reply कर सके
-    await context.bot.send_message(
-        chat_id=ADMIN_ID,
-        text=(f"💬 <b>नया मैसेज</b>\n👤 {user.first_name or 'User'}"
-              + (f" (@{user.username})" if user.username else "") +
-              f"\nUser ID: {user.id}\n\n{text}"),
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("↩️ जवाब दें", callback_data=f"rep_{user.id}")
-        ]]))
-    await msg.reply_text("✅ मैसेज एडमिन को भेज दिया।")
-
-
-# ============ DOCUMENT HANDLER (Updated for Media Groups) ============
-admin_header_cache = {}
-user_confirm_cache = {}
-
-async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    msg = update.message
-    
-    # अगर एडमिन ने फाइल भेजी है तो कुछ न करें
-    if user.id == ADMIN_ID: 
-        return
-
-    save_user(user)
-    
-    # FIX 4: forward() पर try/except — failure पर user को बताओ और आगे बढ़ो मत
-    try:
-        await msg.forward(chat_id=ADMIN_ID)
-    except Exception as e:
-        logging.exception("Forward to admin failed: %s", e)
-        await msg.reply_text("⚠️ फाइल भेजने में दिक्कत आई। थोड़ी देर बाद कोशिश करें।")
-        return
-
-    # 2. एडमिन को हेडर भेजने का लॉजिक (हर नए बैच के लिए सिर्फ 1 बार)
-    media_group_id = msg.media_group_id
-    
-    if media_group_id:
-        group_key = f"{user.id}_{media_group_id}"
-        
-        # अगर इस बैच का हेडर नहीं गया है, तो भेजें
-        if group_key not in admin_header_cache:
-            admin_header_cache[group_key] = True
-            
-            # FIX 3: header में "User ID:" जोड़ा
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=(f"📁 <b>नई फाइल(ें) प्राप्त हुईं</b>\n"
-                      f"👤 {user.first_name or 'User'}"
-                      + (f" (@{user.username})" if user.username else "") +
-                      f"\nUser ID: {user.id}"),
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("↩️ जवाब दें", callback_data=f"rep_{user.id}")
-                ]])
-            )
-            
-            # 15 सेकंड बाद कैश साफ करें ताकि अगर वही यूजर बाद में फिर फाइलें भेजे तो नया हेडर बने
-            async def clear_admin_cache():
-                await asyncio.sleep(15)
-                if group_key in admin_header_cache:
-                    del admin_header_cache[group_key]
-            asyncio.create_task(clear_admin_cache())
-    else:
-        # अगर सिंगल फाइल भेजी गई है
-        # FIX 3: header में "User ID:" जोड़ा
-        await context.bot.send_message(
-            chat_id=ADMIN_ID,
-            text=(f"📁 <b>नई फाइल प्राप्त हुई</b>\n"
-                  f"👤 {user.first_name or 'User'}"
-                  + (f" (@{user.username})" if user.username else "") +
-                  f"\nUser ID: {user.id}"),
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("↩️ जवाब दें", callback_data=f"rep_{user.id}")
-            ]])
-        )
-
-    # 3. यूजर को कन्फर्मेशन भेजने का लॉजिक (सिर्फ एक बार)
-    if user.id in user_confirm_cache and user_confirm_cache[user.id]:
-        user_confirm_cache[user.id].cancel()
-    
-    async def send_user_confirmation():
-        try:
-            await asyncio.sleep(2.0) 
-            await context.bot.send_message(
-                chat_id=user.id, 
-                text="✅ आपकी सभी फाइलें एडमिन को भेज दी गई हैं।"
-            )
-        except asyncio.CancelledError:
-            pass
-            
-    user_confirm_cache[user.id] = asyncio.create_task(send_user_confirmation())
-
-
-def main():
-    init_db()
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("admin", admin_panel))
-    app.add_handler(CommandHandler("users", users_list))
-    app.add_handler(CommandHandler("cancel", cancel_cmd))
-    app.add_handler(CommandHandler("myid", myid_command))   # FIX 2
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_document))
-    print("बॉट चालू...")
-    app.run_polling(drop_pending_updates=True)
-
-
-if __name__ == '__main__':
-    main()
+async def button_handler(update: Updat
